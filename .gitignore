@@ -1,3 +1,20 @@
+# plots from headless runs
+Rplots.pdf
+
+#mac users
+.DS_Store
+
+# another R file to ignore
+.RDataTmp
+
+# binary files
+*.so
+*.o
+*.dll
+
+# thumbs
+Thumbs.db
+
 # History files
 .Rhistory
 .Rapp.history
@@ -47,3 +64,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# data that may be large
+tmpdata/
