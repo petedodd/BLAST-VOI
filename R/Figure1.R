@@ -128,5 +128,3 @@ ggsave(here("output/Figure1.png"),
   Fig1,
   width = 10, height = 6, dpi = 300
 )
-
-
