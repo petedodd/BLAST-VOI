@@ -6,8 +6,8 @@ library(data.table)
 library(BLASTtbmod)
 
 ## load data in this case
-load(file="~/Downloads/ress0.Rdata")
-load(file="~/Downloads/ress1.Rdata")
+load(ress0, file = here("tmpdata/ress0.Rdata"))
+load(ress1, file = here("tmpdata/ress1.Rdata"))
 
 
 ## ## plots
@@ -52,16 +52,18 @@ formplotdata <- function(Y, eps = 0.25) {
 }
 
 
-## extract data
-E0 <- formplotdata(ress0,eps=0.05)
-E1 <- formplotdata(ress1,eps=0.05)
-E0[,acf:="No ACF"]
-E1[,acf:="ACF"]
-EB <- rbind(E0,E1)
+## extract data (NOTE memory hungry)
+E0 <- formplotdata(ress0, eps = 0.05)
+E1 <- formplotdata(ress1, eps = 0.05)
+E0[, acf := "No ACF"]
+E1[, acf := "ACF"]
+EB <- rbind(E0, E1)
 
-save(EB,file="~/Downloads/EB.Rdata")
 
-load(file="~/Downloads/EB.Rdata")
+fn <- here("tmpdata/EB.Rdata")
+save(EB, file = fn)
+
+load(fn)
 
 ## notifications
 real_dat <- BLASTtbmod::md7
@@ -75,56 +77,29 @@ VL <- data.table(
   patch = rep(EB[, unique(patch)], each = 2),
   t = EB[, max(t)] - c(0, rep(1:6, each = 2), 7) * 12
 )
-
-
 VL[, item := rep(2:1, 7)]
 VLW <- dcast(VL, patch ~ item, value.var = "t")
 names(VLW)[2:3] <- c("bot", "top")
 
 
 ## difference
-ED <- dcast(EB[qty == "cummort", .(t, patch, mid, acf)], t + patch ~ acf, value.var = "mid")
+ED <- dcast(EB[qty == "cummort", .(t, patch, mid, acf)],
+  t + patch ~ acf,
+  value.var = "mid"
+)
 ED[, ddf := `No ACF` - ACF]
 ED <- merge(ED, VLW, by = "patch")
 ED[!(t <= top & t >= bot), ddf := NA_real_]
 ED[, mnddf := min(ddf, na.rm = TRUE), by = patch]
 ED[!is.na(ddf)]
 ED[, ddf := ddf - mnddf]
-ED[, c("qty", "mid", "lo", "hi", "acf") := .("ddf", ddf, NA_real_, NA_real_, "No ACF - ACF")]
+ED[
+  ,
+  c("qty", "mid", "lo", "hi", "acf") := .(
+    "ddf", ddf, NA_real_, NA_real_, "No ACF - ACF"
+  )
+]
 EB <- rbind(EB, ED[, .(t, patch, qty, hi, lo, mid, acf)])
-
-## TODO construct cumulative mort and diff slopes
-## change names of everything TODO
-
-## ## plot
-## ggplot(EB,aes(2015+t/12,y=mid,ymin=lo,ymax=hi,col=acf,fill=acf,group=paste(patch,qty,acf)))+
-##   geom_line()+
-##   geom_ribbon(alpha=0.3,col=NA)+
-##   facet_grid(factor(qty,levels=c("noterate","mortrate")) ~ patch)+
-##   xlab("Time")+ylab("Quantity per 100,000")+
-##   geom_point(data = real_dat, col = 2, shape = 1)+
-##   theme_linedraw()+
-##   theme(legend.position = "top",legend.title = element_blank())
-
-## ggsave(file=here("plots/fit_fig.png"),w=12,h=5)
-
-
-## plot
-ggplot(EB, aes(2015 + t / 12, y = mid, ymin = lo, ymax = hi, col = acf, fill = acf, group = paste(patch, qty, acf))) +
-  geom_ribbon(alpha = 0.3, col = NA) +
-  geom_line() +
-  geom_vline(data = VL, aes(xintercept = 2015 + t / 12), lty = 2, col = "darkgrey") +
-  facet_grid(factor(qty, levels = c("noterate", "mortrate", "cummort", "ddf")) ~ patch,
-    scales = "free_y", switch = "y"
-  ) +
-  xlab("Time") +
-  ylab("Value") +
-  geom_point(data = real_dat, col = 2, shape = 1) +
-  theme_linedraw() +
-  theme(legend.position = "top", legend.title = element_blank())
-
-
-## ggsave(file=here("plots/fit_fig.png"),w=12,h=8)
 
 ## renaming
 EB[, zone := gsub("Patch", "Zone", patch)]
@@ -145,10 +120,17 @@ real_dat[, nqty := fcase(
 )]
 
 ## plot
-ggplot(EB, aes(2015 + t / 12, y = mid, ymin = lo, ymax = hi, col = acf, fill = acf, group = paste(patch, qty, acf))) +
+ggplot(EB, aes(2015 + t / 12,
+  y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
+  group = paste(patch, qty, acf)
+)) +
   geom_ribbon(alpha = 0.3, col = NA) +
   geom_line() +
-  geom_vline(data = VL, aes(xintercept = 2015 + t / 12), lty = 2, col = "darkgrey") +
+  geom_vline(
+    data = VL,
+    aes(xintercept = 2015 + t / 12),
+    lty = 2, col = "darkgrey"
+  ) +
   facet_grid(
     factor(nqty,
       levels = c(
@@ -166,8 +148,7 @@ ggplot(EB, aes(2015 + t / 12, y = mid, ymin = lo, ymax = hi, col = acf, fill = a
   theme_linedraw() +
   theme(legend.position = "top", legend.title = element_blank())
 
-
-ggsave(file = here("plots/fit_fig.png"), w = 12, h = 10)
+ggsave(file = here("output/fit_fig.png"), w = 12, h = 10)
 
 
 ## simplified version
@@ -176,19 +157,24 @@ EBR <- EB[qty == "noterate"]
 
 ## plot
 plt <- "Accent"
-## plt <- "Set2"
-ggplot(EBR, aes(2015 + t / 12, y = mid, ymin = lo, ymax = hi, col = acf, fill = acf, group = paste(patch, qty, acf))) +
+ggplot(EBR, aes(2015 + t / 12,
+  y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
+  group = paste(patch, qty, acf)
+)) +
   geom_ribbon(alpha = 0.3, col = NA) +
   geom_line(lwd = 1) +
   scale_fill_brewer(palette = plt) +
   scale_color_brewer(palette = plt) +
-  geom_vline(data = VL, aes(xintercept = 2015 + t / 12), lty = 2, col = "darkgrey") +
+  geom_vline(
+    data = VL,
+    aes(xintercept = 2015 + t / 12),
+    lty = 2, col = "darkgrey"
+  ) +
   facet_wrap(~zone) +
   xlab("Time") +
   ylab("TB notifications per month") +
   geom_point(data = real_dat, col = 2, shape = 1) +
   theme_linedraw() +
-  ## theme(legend.position = "top",legend.title = element_blank())
   theme(
     legend.position = "inside",
     legend.position.inside = c(0.6, 0.15),
@@ -196,14 +182,12 @@ ggplot(EBR, aes(2015 + t / 12, y = mid, ymin = lo, ymax = hi, col = acf, fill = 
   ) +
   guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1))
 
-
-ggsave(file = here("plots/fit_fig_simple.png"), w = 8, h = 7)
-
+ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
 
 
 ## ============ looking at figure 4 =========
-source(here("VOI/utils/benefit.R"))
-load(here("VOI/utils/pops.Rdata"))
+source(here("R/utils/benefit.R"))
+load(here("data/pops.Rdata"))
 
 ## EB ddf are the slopes
 EB[qty == "ddf" & !is.na(mid)]
@@ -244,6 +228,7 @@ for (i in 1:length(covz)) {
     k <- k + 1
   }
 }
+
 B <- rbindlist(B)
 B[, db := bnft_opt - bnft_sub]
 eps <- 0.25
@@ -254,7 +239,14 @@ BS <- B[, .(
   ## db.lo=quantile(db,eps),
   ## db.hi=quantile(db,1-eps)
 ), by = coverage]
-BS <- rbind(BS, data.table(coverage = c(0.0, 1.0), db = rep(0.0, 2), db.lo = rep(0.0, 2), db.hi = rep(0.0, 2)))
+BS <- rbind(
+  BS,
+  data.table(
+    coverage = c(0.0, 1.0), db = rep(0.0, 2), db.lo = rep(0.0, 2),
+    db.hi = rep(0.0, 2)
+  )
+)
+
 
 r <- 3e-2
 LE <- 35
@@ -263,7 +255,13 @@ BS[, DALY.lo := db.lo * (1 - exp(-r * LE)) / r]
 BS[, DALY.hi := db.hi * (1 - exp(-r * LE)) / r]
 
 
-fig4a <- ggplot(BS, aes(x = coverage, y = DALY, ymin = DALY.lo, ymax = DALY.hi)) +
+fig4a <- ggplot(
+  BS,
+  aes(
+    x = coverage, y = DALY,
+    ymin = DALY.lo, ymax = DALY.hi
+  )
+) +
   geom_ribbon(alpha = 0.3, col = NA) +
   geom_line() +
   geom_point() +
@@ -271,11 +269,18 @@ fig4a <- ggplot(BS, aes(x = coverage, y = DALY, ymin = DALY.lo, ymax = DALY.hi))
   ggpubr::grids() +
   scale_x_continuous(label = scales::percent) +
   ylab("VOI in DALYs averted")
+
 fig4a
 
 ## USD version
 BT <- data.table(CET = seq(from = 0, to = 1e3, by = 1))
-BT[, c("voi.mid", "voi.lo", "voi.hi") := BS[coverage == 0.5, .(CET * DALY, CET * DALY.lo, CET * DALY.hi)]]
+BT[, c("voi.mid", "voi.lo", "voi.hi") := BS[
+  coverage == 0.5,
+  .(
+    CET * DALY, CET * DALY.lo,
+    CET * DALY.hi
+  )
+]]
 
 fig4b <- ggplot(BT, aes(x = CET, y = voi.mid, ymin = voi.lo, ymax = voi.hi)) +
   geom_ribbon(alpha = 0.3, col = NA) +
@@ -285,10 +290,11 @@ fig4b <- ggplot(BT, aes(x = CET, y = voi.mid, ymin = voi.lo, ymax = voi.hi)) +
   xlab("Cost-effectiveness threshold (USD)") +
   scale_y_continuous(label = scales::comma) +
   ylab("VOI in USD")
+
 fig4b
 
 fig4 <- ggarrange(fig4a, fig4b, nrow = 1, ncol = 2, labels = LETTERS[1:2])
 fig4
 
-ggsave(fig4, file = here("plots/fig4.png"), w = 10, h = 5)
+ggsave(fig4, file = here("output/Figure4.png"), w = 10, h = 5)
 
