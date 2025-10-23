@@ -30,6 +30,8 @@ names(FMD) <- paste0(1:7)
 FMD[, fromZone := 1:7]
 FMDM <- melt(FMD, id = "fromZone")
 names(FMDM)[2] <- "toZone"
+FMDM[, c("From zone", "To zone") := .(fromZone, toZone)]
+
 
 ## === panel A: map++
 ## construct map
@@ -71,7 +73,7 @@ fig1b <- ggplot(TBNR, aes(monthyr, notes)) +
   theme_classic() +
   grids() +
   xlab("Year") +
-  ylab("Notifications\n per capita") +
+  ylab("TB notifications\n per capita") +
   expand_limits(y = c(0, NA))
 
 fig1b
@@ -94,7 +96,7 @@ fig1c
 ## === panel D: something genomic/fluxy
 fig1d <- ggplot(
   FMDM,
-  aes(fromZone, toZone, fill = value, label = value)
+  aes(`From zone`, `To zone`, fill = value, label = value)
 ) +
   geom_tile() +
   geom_text(col = 2) +
