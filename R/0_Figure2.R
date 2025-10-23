@@ -168,7 +168,7 @@ F4 <- ggplot(
   theme_classic() +
   grids() +
   theme(axis.text = element_blank()) +
-  xlab("Population screened = budget") +
+  xlab("Population screened = budget used") +
   ylab("Deaths averted")
 F4
 
@@ -192,7 +192,7 @@ F3 <- ggplot(
   theme_classic() +
   grids() +
   theme(axis.text = element_blank()) +
-  xlab("Population screened = budget") +
+  xlab("Population screened = budget used") +
   ylab("Deaths averted")
 F3
 
@@ -201,7 +201,8 @@ FC <- (
   F1 + F2 + F3 + F4 +
     plot_layout(ncol = 2, byrow = FALSE)
 ) +
-  plot_annotation(tag_levels = "A")
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold"))
 FC
 
 ggsave(here("output/Figure2.png"), w = 8, h = 8)
