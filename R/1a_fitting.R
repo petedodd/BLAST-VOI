@@ -272,6 +272,7 @@ formplotdata <- function(Y, eps = 0.25) {
   aggD <- dcast(aggD, t + patch + qty ~ type, value.var = "value")
   aggD
 }
+
 E0 <- formplotdata(ress0,eps=0.05)
 E1 <- formplotdata(ress1,eps=0.05)
 E0[,acf:="No ACF"]
@@ -288,14 +289,24 @@ VL <- data.table(
 VL[, item := rep(2:1, 7)]
 VLW <- dcast(VL, patch ~ item, value.var = "t")
 names(VLW)[2:3] <- c("bot", "top")
-ED <- dcast(EB[qty == "cummort", .(t, patch, mid, acf)], t + patch ~ acf, value.var = "mid")
+ED <- dcast(
+  EB[qty == "cummort", .(t, patch, mid, acf)],
+  t + patch ~ acf,
+  value.var = "mid"
+)
 ED[, ddf := `No ACF` - ACF]
 ED <- merge(ED, VLW, by = "patch")
 ED[!(t <= top & t >= bot), ddf := NA_real_]
 ED[, mnddf := min(ddf, na.rm = TRUE), by = patch]
 ED[!is.na(ddf)]
 ED[, ddf := ddf - mnddf]
-ED[, c("qty", "mid", "lo", "hi", "acf") := .("ddf", ddf, NA_real_, NA_real_, "No ACF - ACF")]
+ED[
+  ,
+  c("qty", "mid", "lo", "hi", "acf") := .(
+    "ddf", ddf, NA_real_, NA_real_, "No ACF - ACF"
+  )
+]
+
 EB <- rbind(EB, ED[, .(t, patch, qty, hi, lo, mid, acf)])
 EB[, zone := gsub("Patch", "Zone", patch)]
 VL[, zone := gsub("Patch", "Zone", patch)]
