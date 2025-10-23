@@ -5,7 +5,10 @@ library(ggplot2)
 library(epiR)
 library(glue)
 
+gh <- function(x) glue(here(x))
+
 ## === trying different data for
+## TODO check should this be earlier in workflow
 fn <- here("data/pops.Rdata")
 if (!file.exists(fn)) {
   zones <- sf::read_sf(
@@ -22,20 +25,9 @@ if (!file.exists(fn)) {
 ## === utils
 source(here("R/utils/benefit.R")) #for benefit()
 
-## for tables etc
-gr <- function(m, l, h) {
-  m <- formatC(m, format = "f", digits = 2)
-  l <- formatC(l, format = "f", digits = 2)
-  h <- formatC(h, format = "f", digits = 2)
-  glue("{m} ({l} to {h})")
-}
-
 
 ## ====================================================
 ## ** task 3 **: Analyse strategies & VOI with emulator
-
-## TODO
-## these are from task 2
 
 ## patch veresion
 np <- c(
@@ -53,8 +45,8 @@ np <- c(
 
 RL <- PL <- list()
 for (n in np) {
-  load(glue("~/Dropbox/Holocron/tmp/RP2/R{n}.Rdata"))
-  load(glue("~/Dropbox/Holocron/tmp/RP2/P{n}.Rdata"))
+  load(gh("tmpdata/R{n}.Rdata"))
+  load(gh("tmpdata/P{n}.Rdata"))
   RL[[n]] <- R
   PL[[n]] <- P
 }
@@ -86,7 +78,6 @@ DbenefitFromSlps(true_slopes, pops, # use pops as ranking
   verbose = TRUE,
   separate = TRUE
 )
-
 
 ## loop at half coverage:
 B <- RP[,
