@@ -1,0 +1,6 @@
+variable,PRCC
+real.Fprev.CV,0.22 (0.22 to 0.23)
+real.Fprev.mean,0.11 (0.11 to 0.12)
+real.foi.CV,0.04 (0.03 to 0.05)
+real.foi.mean,0.03 (0.02 to 0.04)
+alph,-0.01 (-0.01 to -0.00)

@@ -1,0 +1,6 @@
+variable,PRCC
+numpatches,0.34 (0.34 to 0.34)
+real.Fprev.mean,0.27 (0.27 to 0.28)
+real.Fprev.CV,0.15 (0.15 to 0.16)
+real.foi.CV,0.14 (0.13 to 0.14)
+real.foi.mean,0.13 (0.13 to 0.14)
