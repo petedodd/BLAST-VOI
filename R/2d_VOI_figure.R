@@ -57,9 +57,13 @@ fig1a
 
 ## ------------ fig 1b
 BN <- PB[,
-  .(DB = mean(bnft_opt - bnft_sub), DB.sd = sd(bnft_opt - bnft_sub)),
+  .(
+    DB = mean(bnft_opt - bnft_sub) * (1 - exp(-daly$r * daly$LE)) / daly$r,
+    DB.sd = sd(bnft_opt - bnft_sub) * (1 - exp(-daly$r * daly$LE)) / daly$r
+  ),
   by = numpatches
 ]
+
 
 fig1b <- ggplot(BN, aes(numpatches, DB)) +
   geom_line() +
@@ -85,10 +89,12 @@ PBR[, v1c := cut(1e5 * real.Fprev.mean,
 PBR[, unique(v1c)]
 
 XY <- PBR[,
-  .(`VOI in DALYs` = mean(bnft_opt - bnft_sub)),
+  .(
+    `VOI in DALYs` =
+      mean(bnft_opt - bnft_sub) * (1 - exp(-daly$r * daly$LE)) / daly$r
+  ),
   by = .(v1c, numpatches)
 ]
-
 
 ## plot
 fig1c <- ggplot(XY, aes(v1c, numpatches, fill = `VOI in DALYs`)) +
@@ -103,7 +109,6 @@ fig1c <- ggplot(XY, aes(v1c, numpatches, fill = `VOI in DALYs`)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-
 fig1c
 
 
@@ -115,4 +120,3 @@ fig1c
 
 ggsave(here("output/Figure5.png"), w = 10, h = 6)
 
-## TODO units

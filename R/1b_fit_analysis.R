@@ -10,17 +10,6 @@ load(ress0, file = here("tmpdata/ress0.Rdata"))
 load(ress1, file = here("tmpdata/ress1.Rdata"))
 
 
-## ## plots
-## plot_compare_noterate_agrgt(ress0)
-## plot_compare_noterate_agrgt(ress1)
-
-
-## str(A$trajectories$state)
-
-## unique(gsub("\\[.+\\]","",BLASTtbmod::get_cols))
-
-## test <- extract.pops.multi(A$trajectories$state, 250, out_type = "notes")
-
 ## function to get out relevant data
 formplotdata <- function(Y, eps = 0.25) {
   n_chain_steps <- dim(Y)[2]
@@ -247,12 +236,10 @@ BS <- rbind(
   )
 )
 
-
-r <- 3e-2
-LE <- 35
-BS[, DALY := db * (1 - exp(-r * LE)) / r]
-BS[, DALY.lo := db.lo * (1 - exp(-r * LE)) / r]
-BS[, DALY.hi := db.hi * (1 - exp(-r * LE)) / r]
+## see utils/benefit.R for daly
+BS[, DALY := db * (1 - exp(-daly$r * daly$LE)) / daly$r]
+BS[, DALY.lo := db.lo * (1 - exp(-daly$r * daly$LE)) / daly$r]
+BS[, DALY.hi := db.hi * (1 - exp(-daly$r * daly$LE)) / daly$r]
 
 
 fig4a <- ggplot(

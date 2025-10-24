@@ -93,3 +93,9 @@ gr <- function(m, l, h) {
   h <- formatC(h, format = "f", digits = 2)
   glue::glue("{m} ({l} to {h})")
 }
+
+## parameters for converting deaths into DALYs
+daly <- list(
+  r = 3e-2, #discount rate
+  LE = 35   #life-expectancy
+)
