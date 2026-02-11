@@ -48,6 +48,9 @@ args$beta <- 5
 args$cdr <- 0.8
 str(args)
 
+args$ART_int <- rep(0.5, length(args$ART_int))
+names(args)
+
 ## ACF: doing this makes B
 ne <- args$sim_length
 ITL <- list(
@@ -65,6 +68,45 @@ for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 test <- run.model(args, args$tt, n.particles = 200)
 plot_compare_noterate_agrgt(test, realdata = FALSE)
 
+
+## ----------- other checks
+## --- inspect demographic outputs
+plot_compare_demog(test, by_comp = "age")
+
+ggsave(filename = here("output/x_demodyn.png"), w = 10, h = 5)
+
+
+## --- HIV comparisons
+gp <- plot_HIV_dynamic(test, start_year = 2015, by_patch = FALSE)
+
+## comparison data: need to scale national
+data(hivp_mwi)
+hivp_mwi[, step := (Period - 2015) * 12 + 1]
+xdta <- hivp_mwi[Period >= 2015]
+## NOTE scales to match initial:
+fac <- xdta[step == min(step) & variable == "HIVpc", value]
+fac <- gp@data[step == min(step) & variable == "HIVpc", value] / fac
+xdta[
+  variable == "HIVpc",
+  c("value", "lo", "hi") := .(value * fac, lo * fac, hi * fac)
+]
+
+gp <- gp +
+  geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) +
+  xlim(c(2015, 2025))
+
+ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
+
+## --- zone-wise comparison
+hivpd <- BLASTtbmod::blantyre$hivpre
+hivpd <- data.table(
+  patch = paste0("Patch ", 1:7), step = 1, variable = "HIVpc", value = hivpd
+)
+
+gp <- plot_HIV_dynamic(test, start_year = 2015, show_ART = FALSE)
+gp + geom_point(data = hivpd, pch = 1, size = 2, stroke = 2)
+
+ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 7)
 
 
 ## --- D0 inference
