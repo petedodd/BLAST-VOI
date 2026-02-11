@@ -41,16 +41,11 @@ filter <- create.particlefilter(
 
 
 ## change parms
-args <- get.parms(start_year = start_year, years = years + 7)
+args <- get.parms(start_year = start_year, years = years + 7, hivoffset = 5)
 args$ari0 <- 5e-2
 args$initD[, 2:3] <- 150e-5
 args$beta <- 5
 args$cdr <- 0.8
-str(args)
-
-args$ART_int <- rep(0.5, length(args$ART_int))
-names(args)
-
 ## ACF: doing this makes B
 ne <- args$sim_length
 ITL <- list(
@@ -63,22 +58,23 @@ ITL <- list(
   (ne - 7 * 12):(ne - 6 * 12)
 )
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
-
+args$ART_int <- rep(0.15, length(args$ART_int))
 ## fwd simulation & test
 test <- run.model(args, args$tt, n.particles = 200)
+
 plot_compare_noterate_agrgt(test, realdata = FALSE)
 
 
 ## ----------- other checks
 ## --- inspect demographic outputs
 plot_compare_demog(test, by_comp = "age")
-
-ggsave(filename = here("output/x_demodyn.png"), w = 10, h = 5)
+## NOTE we don't expect perfect agreement here because
+## we data are scaled national demographic change
+## and there is much higher HIV prevalence in Blantyre
 
 
 ## --- HIV comparisons
 gp <- plot_HIV_dynamic(test, start_year = 2015, by_patch = FALSE)
-
 ## comparison data: need to scale national
 data(hivp_mwi)
 hivp_mwi[, step := (Period - 2015) * 12 + 1]
@@ -90,10 +86,10 @@ xdta[
   variable == "HIVpc",
   c("value", "lo", "hi") := .(value * fac, lo * fac, hi * fac)
 ]
-
 gp <- gp +
   geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) +
   xlim(c(2015, 2025))
+gp
 
 ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
 
