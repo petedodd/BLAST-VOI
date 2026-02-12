@@ -41,7 +41,7 @@ filter <- create.particlefilter(
 
 
 ## change parms
-args <- get.parms(start_year = start_year, years = years + 7, hivoffset = 5)
+args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
 args$ari0 <- 5e-2
 args$initD[, 2:3] <- 150e-5
 args$beta <- 5
@@ -58,10 +58,11 @@ ITL <- list(
   (ne - 7 * 12):(ne - 6 * 12)
 )
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
-args$ART_int <- rep(0.15, length(args$ART_int))
 ## fwd simulation & test
 test <- run.model(args, args$tt, n.particles = 200)
 
+
+## check
 plot_compare_noterate_agrgt(test, realdata = FALSE)
 
 
@@ -100,10 +101,16 @@ hivpd <- data.table(
 )
 
 gp <- plot_HIV_dynamic(test, start_year = 2015, show_ART = FALSE)
-gp + geom_point(data = hivpd, pch = 1, size = 2, stroke = 2)
+gp <- gp + geom_point(data = hivpd, pch = 1, size = 2, stroke = 2)
+gp
 
-ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 7)
+ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
 
+## HIV in TB
+gp <- plot_HIV_in_TB(test, start_year = 2015) + xlim(c(2015, 2021))
+gp
+
+ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
 
 ## --- D0 inference
 ## args$initD
