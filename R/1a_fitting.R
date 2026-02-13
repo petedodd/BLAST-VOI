@@ -97,7 +97,7 @@ ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
 ## --- zone-wise comparison
 hivpd <- BLASTtbmod::blantyre$hivpre
 hivpd <- data.table(
-  patch = paste0("Patch ", 1:7), step = 1, variable = "HIVpc", value = hivpd
+  zone = paste0("Zone ", 1:7), step = 1, variable = "HIVpc", value = hivpd
 )
 
 gp <- plot_HIV_dynamic(test, start_year = 2015, show_ART = FALSE)
