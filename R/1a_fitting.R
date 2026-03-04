@@ -42,9 +42,14 @@ filter <- create.particlefilter(
 
 ## change parms
 args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
-args$ari0 <- 5e-2
-args$initD[, 2:3] <- 150e-5
-args$beta <- 5
+args <- get.parms(
+  start_year = start_year, years = years + 7, hivfac = 2,
+  hivdecline = 0
+)
+args$ART_int <- 5e-2
+args$ari0 <- 9e-2
+args$initD[, 2:3] <- 500e-5
+args$beta <- 2
 args$cdr <- 0.8
 ## ACF: doing this makes B
 ne <- args$sim_length
