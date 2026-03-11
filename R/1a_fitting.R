@@ -9,7 +9,6 @@ data(pf_data7)
 
 ## define other parameters
 n_particles <- 10
-time <- 1 #NOTE not used TODO check
 start_year <- 2015
 years <- 6
 
@@ -41,9 +40,10 @@ filter <- create.particlefilter(
 
 
 ## change parms
-args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
+## args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
+DY <- 5
 args <- get.parms(
-  start_year = start_year, years = years + 7, hivfac = 2,
+  start_year = start_year - DY, years = years + 7, hivfac = 2,
   hivdecline = 0
 )
 args$ART_int <- 5e-2
@@ -73,14 +73,14 @@ plot_compare_noterate_agrgt(test, realdata = FALSE)
 
 ## ----------- other checks
 ## --- inspect demographic outputs
-plot_compare_demog(test, by_comp = "age")
+plot_compare_demog(test, start_year = 2015 - DY, by_comp = "age")
 ## NOTE we don't expect perfect agreement here because
 ## we data are scaled national demographic change
 ## and there is much higher HIV prevalence in Blantyre
 
 
 ## --- HIV comparisons
-gp <- plot_HIV_dynamic(test, start_year = 2015, by_patch = FALSE)
+gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, by_patch = FALSE)
 ## comparison data: need to scale national
 data(hivp_mwi)
 hivp_mwi[, step := (Period - 2015) * 12 + 1]
@@ -105,14 +105,14 @@ hivpd <- data.table(
   zone = paste0("Zone ", 1:7), step = 1, variable = "HIVpc", value = hivpd
 )
 
-gp <- plot_HIV_dynamic(test, start_year = 2015, show_ART = FALSE)
+gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, show_ART = FALSE)
 gp <- gp + geom_point(data = hivpd, pch = 1, size = 2, stroke = 2)
 gp
 
 ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
 
 ## HIV in TB
-gp <- plot_HIV_in_TB(test, start_year = 2015) + xlim(c(2015, 2021))
+gp <- plot_HIV_in_TB(test, start_year = 2015 - DY) + xlim(c(2015, 2021))
 gp
 
 ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
