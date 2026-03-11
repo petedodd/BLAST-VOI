@@ -4,6 +4,7 @@ library(data.table)
 library(expm)
 library(ggplot2)
 library(ggrepel)
+library(ggpubr)
 library(readxl)
 library(sf)
 library(BLASTtbmod)
@@ -197,8 +198,8 @@ ggsave(gp, filename = here("output/x_fluxapp.png"), w = 7, h = 5)
 
 rm(list = ls())
 
+## TODO really needed?
 ## === trying different data for
-
 zones <- read_sf(here("data/shp/blantyre_7zone_update.shp"))
 zones <- zones[order(zones$zone), ] #order by zone number
 pops <- zones$population #populations
@@ -207,20 +208,23 @@ plot(zones$tb_pre, zones$rate_15)
 abline(a = 0, b = 1, col = 2)
 
 ## === phyloflows output
+## proportion of all transmission that is:
+## from row/patch
+## to col/patch
 FM <- read_excel(here("data/PhyloFlows_7Zone.xlsx"))
 FM <- FM[, 2:ncol(FM)]
 FM <- as.matrix(FM)
+FM <- FM / sum(FM) # correct rounding
+
 
 ## initial prevalences
 dinit <- cbind(rep(0, 7), prev, prev) * 1e-5
 ## mixing from flux
-MM <- t(FM) ## use rescaled flux
 ## (transpose because rows are from, cols are to)
+MM <- t(FM)
 for (i in 1:nrow(MM)) { #loops for transparency
   for (j in 1:nrow(MM)) {
-    ## MM[i, j] <- MM[i, j] / (pops[i] * prev[j])
-    MM[i, j] <- pops[j] #this is random mixing
-    ## MM[i, j] <- 1 #should give fixed lam_ij
+    MM[i, j] <- MM[i, j] / (pops[i] * prev[j])
   }
 }
 MM <- MM / max(Re(eigen(MM)$values)) #renormalize
@@ -244,7 +248,6 @@ output <- run.model(
   convert = FALSE
 )
 
-
 ## get notification flux
 note_flux_idx <- grep("cum_note_flux", BLASTtbmod::get_cols)
 (nmz <- grep("cum_note_flux", BLASTtbmod::get_cols, value = TRUE)) # check
@@ -252,12 +255,22 @@ tmp <- t(apply(
   output[note_flux_idx, , ],
   MARGIN = c(1, 3), FUN = mean
 )) # matrix over time, mean over particles
+tmp_sd <- t(apply(
+  output[note_flux_idx, , ],
+  MARGIN = c(1, 3), FUN = sd
+)) # matrix over time, SD over particles
 matplot(tmp, type = "l")           #plot
 note_flux <- matrix(
   tail(tmp, n = 1), # last for cumulative
   ncol = args$patch_dims,
   nrow = args$patch_dims
 )
+note_flux_sd <- matrix(
+  tail(tmp_sd, n = 1), # last for cumulative
+  ncol = args$patch_dims,
+  nrow = args$patch_dims
+)
+note_flux_sd <- note_flux_sd / max(note_flux) #normalize
 note_flux <- note_flux / max(note_flux) #normalize
 
 ## get infection flux
@@ -267,64 +280,83 @@ tmp <- t(apply(
   output[inf_flux_idx, , ],
   MARGIN = c(1, 3), FUN = mean
 )) # matrix over time, mean over particles
+tmp_sd <- t(apply(
+  output[inf_flux_idx, , ],
+  MARGIN = c(1, 3), FUN = sd
+)) # matrix over time, SD over particles
 matplot(tmp, type = "l")          #plot
 inf_flux <- matrix(
   tail(tmp, n = 1),
   ncol = args$patch_dims, nrow = args$patch_dims
 )
+inf_flux_sd <- matrix(
+  tail(tmp_sd, n = 1),
+  ncol = args$patch_dims, nrow = args$patch_dims
+)
+inf_flux_sd <- inf_flux_sd / max(inf_flux) # normalize
 inf_flux <- inf_flux / max(inf_flux) #normalize
 
 ## comparison
 CF <- data.table(
   genomic.flux = c(FM / max(FM)),
   output.FOI.flux = c(inf_flux),
-  output.note.flux = c(note_flux)
+  output.FOI.flux.sd = c(inf_flux_sd),
+  output.note.flux = c(note_flux),
+  output.note.flux.sd = c(note_flux_sd)
 )
 CF[, variable := gsub("cum_inf_flux", "", nmz)]
-CF[, fromid := gsub("\\[", "", gsub(",.\\]", "", variable))]
+CF[, `source zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
 
 ## FOI vs note
-ggplot(
+GP1 <- ggplot(
   CF,
   aes(
-    x = output.FOI.flux, y = output.note.flux,
-    label = variable, shape = fromid, col = fromid
+    x = output.FOI.flux,
+    xmin = output.FOI.flux - 1.96 * output.FOI.flux.sd,
+    xmax = output.FOI.flux + 1.96 * output.FOI.flux.sd,
+    y = output.note.flux,
+    ymin = output.note.flux - 1.96 * output.note.flux.sd,
+    ymax = output.note.flux + 1.96 * output.note.flux.sd,
+    label = variable, shape = `source zone`, col = `source zone`
   )
 ) +
   geom_abline(intercept = 0, slope = 1, col = 2) +
   scale_shape_manual(values = 0:6) +
+  geom_errorbar(width = 1e-2, alpha = 0.4) +
+  geom_errorbarh(width = 1e-2, alpha = 0.4) +
   geom_point(size = 2) +
   geom_text_repel(show.legend = FALSE) +
   theme_classic() +
-  ggpubr::grids()
+  ggpubr::grids() +
+  xlab("Model infection flux") +
+  ylab("Model notification flux") +
+  theme(legend.position = "top") +
+  guides(shape = guide_legend(nrow = 1, byrow = TRUE))
 
-## data vs FOI
-ggplot(
-  CF,
-  aes(
-    x = genomic.flux, y = output.FOI.flux,
-    label = variable, shape = fromid, col = fromid
-  )
-) +
-  geom_abline(intercept = 0, slope = 1, col = 2) +
-  scale_shape_manual(values = 0:6) +
-  geom_point(size = 2) +
-  geom_text_repel(show.legend = FALSE) +
-  theme_classic() +
-  ggpubr::grids()
 
 
 ## data vs note
-ggplot(
+GP2 <- ggplot(
   CF,
   aes(
-    x = genomic.flux, y = output.note.flux,
-    label = variable, shape = fromid, col = fromid
+    x = genomic.flux,
+    y = output.note.flux,
+    ymin = output.note.flux - 1.96 * output.note.flux.sd,
+    ymax = output.note.flux + 1.96 * output.note.flux.sd,
+    label = variable, shape = `source zone`, col = `source zone`
   )
 ) +
   geom_abline(intercept = 0, slope = 1, col = 2) +
   scale_shape_manual(values = 0:6) +
+  geom_errorbar(width = 1e-2, alpha = 0.4) +
   geom_point(size = 2) +
   geom_text_repel(show.legend = FALSE) +
   theme_classic() +
-  ggpubr::grids()
+  ggpubr::grids() +
+  xlab("Genomic-derived flux") +
+  ylab("Model notification flux") +
+  theme(legend.position = "top") +
+  guides(shape = guide_legend(nrow = 1, byrow = TRUE))
+
+## combine plot
+ggarrange( GP1,GP2,nrow=1,ncol=2,common.legend = TRUE, labels=c("A","B"))
