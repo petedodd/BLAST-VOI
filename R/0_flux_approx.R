@@ -195,10 +195,6 @@ ggsave(gp, filename = here("output/x_fluxapp.png"), w = 7, h = 5)
 
 
 ## ========= PART 2: fluxes as inputs
-
-rm(list = ls())
-
-## TODO really needed?
 ## === trying different data for
 zones <- read_sf(here("data/shp/blantyre_7zone_update.shp"))
 zones <- zones[order(zones$zone), ] #order by zone number
@@ -241,6 +237,7 @@ args$MM <- MM
 args$popinit <- pops #CHECK correct order in data/function
 
 ## run model
+set.seed(1234)
 output <- run.model(
   args,
   0:end,
@@ -298,14 +295,15 @@ inf_flux <- inf_flux / max(inf_flux) #normalize
 
 ## comparison
 CF <- data.table(
-  genomic.flux = c(FM / max(FM)),
+  genomic.flux = c(t(FM) / max(FM)), #transpose due to different convention
   output.FOI.flux = c(inf_flux),
   output.FOI.flux.sd = c(inf_flux_sd),
   output.note.flux = c(note_flux),
   output.note.flux.sd = c(note_flux_sd)
 )
 CF[, variable := gsub("cum_inf_flux", "", nmz)]
-CF[, `source zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
+CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
+CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
 
 ## FOI vs note
 GP1 <- ggplot(
@@ -320,7 +318,7 @@ GP1 <- ggplot(
     label = variable, shape = `source zone`, col = `source zone`
   )
 ) +
-  geom_abline(intercept = 0, slope = 1, col = 2) +
+  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
   scale_shape_manual(values = 0:6) +
   geom_errorbar(width = 1e-2, alpha = 0.4) +
   geom_errorbarh(width = 1e-2, alpha = 0.4) +
@@ -346,7 +344,7 @@ GP2 <- ggplot(
     label = variable, shape = `source zone`, col = `source zone`
   )
 ) +
-  geom_abline(intercept = 0, slope = 1, col = 2) +
+  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
   scale_shape_manual(values = 0:6) +
   geom_errorbar(width = 1e-2, alpha = 0.4) +
   geom_point(size = 2) +
@@ -357,6 +355,9 @@ GP2 <- ggplot(
   ylab("Model notification flux") +
   theme(legend.position = "top") +
   guides(shape = guide_legend(nrow = 1, byrow = TRUE))
+GP2
 
 ## combine plot
-ggarrange( GP1,GP2,nrow=1,ncol=2,common.legend = TRUE, labels=c("A","B"))
+GP <- ggarrange(GP1, GP2, nrow = 1, ncol = 2, common.legend = TRUE, labels = c("A", "B"))
+ggsave(GP,filename = here("output/x_fluxapp_model.png"), w = 10, h = 5)
+
