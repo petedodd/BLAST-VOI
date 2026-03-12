@@ -41,6 +41,11 @@ filter <- create.particlefilter(
 
 ## change parms
 ## args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
+names(args)
+args$Hirr <- c(1.0, 50, 50)
+args$HIV_dur_ratio <- 1
+args$ART_det_OR <- 1
+## TODO: CFR
 DY <- 5
 args <- get.parms(
   start_year = start_year - DY, years = years + 7, hivfac = 2,
@@ -66,10 +71,11 @@ for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 ## fwd simulation & test
 test <- run.model(args, args$tt, n.particles = 200)
 
+plot_HIV_in_TB(test, start_year = 2015 - DY)
 
 ## check
-plot_compare_noterate_agrgt(test, realdata = FALSE)
-
+plot_compare_noterate_agrgt(test, realdata = FALSE, start_year = 2015 - DY) +
+  xlim(c(2015, 2025))
 
 ## ----------- other checks
 ## --- inspect demographic outputs
@@ -83,7 +89,7 @@ plot_compare_demog(test, start_year = 2015 - DY, by_comp = "age")
 gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, by_patch = FALSE)
 ## comparison data: need to scale national
 data(hivp_mwi)
-hivp_mwi[, step := (Period - 2015) * 12 + 1]
+hivp_mwi[, step := (Period - 2015 + DY) * 12 + 1]
 xdta <- hivp_mwi[Period >= 2015]
 ## NOTE scales to match initial:
 fac <- xdta[step == min(step) & variable == "HIVpc", value]
@@ -102,16 +108,22 @@ ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
 ## --- zone-wise comparison
 hivpd <- BLASTtbmod::blantyre$hivpre
 hivpd <- data.table(
-  zone = paste0("Zone ", 1:7), step = 1, variable = "HIVpc", value = hivpd
+  zone = paste0("Zone ", 1:7),
+  step = (DY) * 12 + 1,
+  variable = "HIVpc", value = hivpd
 )
 
 gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, show_ART = FALSE)
-gp <- gp + geom_point(data = hivpd, pch = 1, size = 2, stroke = 2)
+gp <- gp +
+  geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
+  xlim(c(2015, 2025))
 gp
 
 ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
 
 ## HIV in TB
+
+
 gp <- plot_HIV_in_TB(test, start_year = 2015 - DY) + xlim(c(2015, 2021))
 gp
 
