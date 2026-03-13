@@ -230,7 +230,10 @@ n_particles <- 100
 start_year <- 2015
 years <- 6
 end <- years * 12
-args <- get.parms(start_year = start_year, years = years, Dinit = dinit, ari0 = 5e-3)
+args <- get.parms(
+  start_year = start_year,
+  years = years, Dinit = dinit, ari0 = 5e-3
+)
 args$beta <- 20
 args$cdr <- 0.7
 args$MM <- MM
@@ -268,7 +271,7 @@ note_flux_sd <- matrix(
   nrow = args$patch_dims
 )
 note_flux_sd <- note_flux_sd / max(note_flux) #normalize
-note_flux <- note_flux / max(note_flux) #normalize
+note_flux <- note_flux / sum(note_flux) #normalize
 
 ## get infection flux
 inf_flux_idx <- grep("cum_inf_flux", BLASTtbmod::get_cols)
@@ -291,7 +294,7 @@ inf_flux_sd <- matrix(
   ncol = args$patch_dims, nrow = args$patch_dims
 )
 inf_flux_sd <- inf_flux_sd / max(inf_flux) # normalize
-inf_flux <- inf_flux / max(inf_flux) #normalize
+inf_flux <- inf_flux / sum(inf_flux) #normalize
 
 ## comparison
 CF <- data.table(
@@ -358,6 +361,126 @@ GP2 <- ggplot(
 GP2
 
 ## combine plot
-GP <- ggarrange(GP1, GP2, nrow = 1, ncol = 2, common.legend = TRUE, labels = c("A", "B"))
+GP <- ggarrange(
+  GP1, GP2,
+  nrow = 1, ncol = 2,
+  common.legend = TRUE,
+  labels = c("A", "B")
+)
+
 ggsave(GP,filename = here("output/x_fluxapp_model.png"), w = 10, h = 5)
 
+
+## ==== exploring over different mixing patterns
+get_single_results <- function(n) {
+  ## create random mixing matrix
+  MM <- FM <- matrix(runif(49), nrow = 7)
+  ## sample as assortativity + random
+  ## FM <- runif(1) * FM / 7
+  ## diag(FM) <- runif(7)
+  FM <- FM / sum(FM) # normalize
+  for (i in 1:nrow(MM)) { # loops for transparency
+    for (j in 1:nrow(MM)) {
+      MM[i, j] <- FM[i, j] / (pops[i] * prev[j])
+    }
+  }
+  MM <- MM / max(Re(eigen(MM)$values)) # renormalize
+  ## modify arguments
+  args$MM <- MM
+
+  ## run model
+  output <- run.model(
+    args,
+    0:end,
+    n.particles = n_particles,
+    convert = FALSE
+  )
+
+  ## get infection flux
+  tmp <- t(apply(
+    output[inf_flux_idx, , ],
+    MARGIN = c(1, 3), FUN = mean
+  )) # matrix over time, mean over particles
+  inf_flux <- matrix(
+    tail(tmp, n = 1),
+    ncol = args$patch_dims, nrow = args$patch_dims
+  )
+  inf_flux <- inf_flux / sum(inf_flux) # normalize
+
+  ## get notification flux
+  tmp <- t(apply(
+    output[note_flux_idx, , ],
+    MARGIN = c(1, 3), FUN = mean
+  )) # matrix over time, mean over particles
+  note_flux <- matrix(
+    tail(tmp, n = 1), # last for cumulative
+    ncol = args$patch_dims, nrow = args$patch_dims
+  )
+  note_flux <- note_flux / sum(note_flux) # normalize
+
+  ## comparison
+  CF <- data.table(
+    iter = n,
+    genomic.flux = c(t(FM) / sum(FM)), # transpose
+    output.FOI.flux = c(inf_flux),
+    output.note.flux = c(note_flux)
+  )
+  CF[, variable := gsub("cum_inf_flux", "", nmz)]
+  CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
+  CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
+
+  return(CF)
+}
+
+
+## loop this as simple PSA
+n_sims <- 100
+set.seed(1234)
+results <- list()
+## loop over simulations
+for (n in 1:n_sims) {
+  cat("Running simulation", n, "\n")
+  results[[n]] <- get_single_results(n)
+}
+results <- rbindlist(results)
+
+## summarize over iterations
+smy <- results[,
+  .(
+    truth = mean(genomic.flux),
+    infection = mean(output.FOI.flux),
+    notification = mean(output.note.flux),
+    truth.lo = quantile(genomic.flux, 0.025),
+    infection.lo = quantile(output.FOI.flux, 0.025),
+    notification.lo = quantile(output.note.flux, 0.025),
+    truth.hi = quantile(genomic.flux, 1 - 0.025),
+    infection.hi = quantile(output.FOI.flux, 1 - 0.025),
+    notification.hi = quantile(output.note.flux, 1 - 0.025)
+  ),
+  by = .(variable, `source zone`, `recipient zone`)
+]
+
+
+## plot data vs note
+GP <- ggplot(
+  smy,
+  aes(
+    x = truth, xmin = truth.lo, xmax = truth.hi,
+    y = notification, ymin = notification.lo, ymax = notification.hi,
+    label = variable, shape = `source zone`, col = `source zone`
+  )
+) +
+  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
+  scale_shape_manual(values = 0:6) +
+  geom_errorbar(width = 1e-2, alpha = 0.4) +
+  geom_errorbar(width = 1e-2, alpha = 0.4, orientation = "y") +
+  geom_point(size = 2) +
+  geom_text_repel(show.legend = FALSE) +
+  theme_classic() +
+  ggpubr::grids() +
+  ylab("Mixing flux") +
+  xlab("Model notification flux") +
+  theme(legend.position = "top") +
+  guides(shape = guide_legend(nrow = 1, byrow = TRUE)) +
+  coord_fixed()
+GP
