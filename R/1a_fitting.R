@@ -41,17 +41,17 @@ filter <- create.particlefilter(
 
 ## change parms
 ## args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
-names(args)
-args$Hirr <- c(1.0, 50, 50)
-args$HIV_dur_ratio <- 1
-args$ART_det_OR <- 1
-## TODO: CFR
 DY <- 5
+mwi_vs_blantyre <- 2.5
 args <- get.parms(
-  start_year = start_year - DY, years = years + 7, hivfac = 2,
-  hivdecline = 0
+  start_year = start_year - DY, years = years + 8,
+  hivfac = mwi_vs_blantyre, hivdecline = 0, hiv_init_override = 0.4,
+  ART_haz = 0.15, ART_init_override = 1e-1,
+  hiv_checking = TRUE
 )
-args$ART_int <- 5e-2
+## args$propinit_hiv
+## names(args)
+## args$ART_int <- 1
 args$ari0 <- 9e-2
 args$initD[, 2:3] <- 500e-5
 args$beta <- 2
@@ -70,8 +70,7 @@ ITL <- list(
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 ## fwd simulation & test
 test <- run.model(args, args$tt, n.particles = 200)
-
-plot_HIV_in_TB(test, start_year = 2015 - DY)
+## plot_HIV_in_TB(test, start_year = 2015 - DY)
 
 ## check
 plot_compare_noterate_agrgt(test, realdata = FALSE, start_year = 2015 - DY) +
@@ -91,16 +90,16 @@ gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, by_patch = FALSE)
 data(hivp_mwi)
 hivp_mwi[, step := (Period - 2015 + DY) * 12 + 1]
 xdta <- hivp_mwi[Period >= 2015]
-## NOTE scales to match initial:
-fac <- xdta[step == min(step) & variable == "HIVpc", value]
-fac <- gp@data[step == min(step) & variable == "HIVpc", value] / fac
+## NOTE scales to match assumption
 xdta[
   variable == "HIVpc",
-  c("value", "lo", "hi") := .(value * fac, lo * fac, hi * fac)
+  c("value", "lo", "hi") := .(
+    value * mwi_vs_blantyre, lo * mwi_vs_blantyre, hi * mwi_vs_blantyre
+  )
 ]
 gp <- gp +
-  geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) +
-  xlim(c(2015, 2025))
+  geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) ## +
+  ## xlim(c(2015, 2025))
 gp
 
 ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
@@ -112,11 +111,10 @@ hivpd <- data.table(
   step = (DY) * 12 + 1,
   variable = "HIVpc", value = hivpd
 )
-
 gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, show_ART = FALSE)
 gp <- gp +
   geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
-  xlim(c(2015, 2025))
+  xlim(c(2015, 2025))+ylim(c(0,NA))
 gp
 
 ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
