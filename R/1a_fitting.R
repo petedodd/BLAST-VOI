@@ -39,19 +39,25 @@ filter <- create.particlefilter(
 )
 
 
+## how much higher is Blantyre HIV prevalence than national (data)?
+mwi_vs_blantyre_PR <-
+  mean(BLASTtbmod::blantyre$hivpre) / # 2015
+    hivp_mwi[variable == "HIVpc" & Period == 2015, value]
+## how much higher is Blantyre HIV inc than national: use prev data
+mwi_vs_blantyre <- mwi_vs_blantyre_PR
+
+
 ## change parms
-## args <- get.parms(start_year = start_year, years = years + 7, hivfac = 2)
-DY <- 5
-mwi_vs_blantyre <- 2.5
+DY <- 5 #years before start_year to start simulation
 args <- get.parms(
-  start_year = start_year - DY, years = years + 8,
-  hivfac = mwi_vs_blantyre, hivdecline = 0, hiv_init_override = 0.4,
-  ART_haz = 0.15, ART_init_override = 1e-1,
+  start_year = start_year - DY, years = years + 9,
+  hivfac = mwi_vs_blantyre, # taken from data
+  hivdecline = 0, hiv_init_override = 0.21,
+  ART_haz = 0.18, ART_init_override = 1e-1,
   hiv_checking = TRUE
 )
-## args$propinit_hiv
-## names(args)
-## args$ART_int <- 1
+hirr <- 40
+args$Hirr <- c(1, hirr, hirr * 0.43)
 args$ari0 <- 9e-2
 args$initD[, 2:3] <- 500e-5
 args$beta <- 2
@@ -90,11 +96,13 @@ gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, by_patch = FALSE)
 data(hivp_mwi)
 hivp_mwi[, step := (Period - 2015 + DY) * 12 + 1]
 xdta <- hivp_mwi[Period >= 2015]
-## NOTE scales to match assumption
+## NOTE scales to match difference seen in data
 xdta[
   variable == "HIVpc",
   c("value", "lo", "hi") := .(
-    value * mwi_vs_blantyre, lo * mwi_vs_blantyre, hi * mwi_vs_blantyre
+    value * mwi_vs_blantyre_PR,
+    lo * mwi_vs_blantyre_PR,
+    hi * mwi_vs_blantyre_PR
   )
 ]
 gp <- gp +
@@ -103,6 +111,8 @@ gp <- gp +
 gp
 
 ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
+
+
 
 ## --- zone-wise comparison
 hivpd <- BLASTtbmod::blantyre$hivpre
@@ -114,14 +124,12 @@ hivpd <- data.table(
 gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, show_ART = FALSE)
 gp <- gp +
   geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
-  xlim(c(2015, 2025))+ylim(c(0,NA))
+  xlim(c(2015, 2025)) + ylim(c(0, NA))
 gp
 
 ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
 
 ## HIV in TB
-
-
 gp <- plot_HIV_in_TB(test, start_year = 2015 - DY) + xlim(c(2015, 2021))
 gp
 
