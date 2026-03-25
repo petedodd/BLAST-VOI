@@ -4,16 +4,134 @@ library(data.table)
 library(ggplot2)
 library(here)
 
-data(in_args) #example
+data(in_args) # example
+## NOTE this data is for 72 months from 2015, so 2015-2020
 data(pf_data7)
 
 ## define other parameters
 n_particles <- 10
-start_year <- 2015
-years <- 6
+start_year <- 2010
+years <- 18 + 1 / 12 #duration of runs
+## this is to accommodate data and ACF experiment phases
+
+## ========= HIV background & set-up
+
+## how much higher is Blantyre HIV prevalence than national (data)?
+mwi_vs_blantyre_PR <-
+  mean(BLASTtbmod::blantyre$hivpre) / # 2015
+    hivp_mwi[variable == "HIVpc" & Period == 2015, value]
+## how much higher is Blantyre HIV inc than national: use prev data
+mwi_vs_blantyre <- mwi_vs_blantyre_PR
+
+
+## change parms to match HIV data
+args <- get.parms(
+  start_year = start_year, years = years,
+  hivfac = mwi_vs_blantyre, # taken from data
+  hivdecline = 0, hiv_init_override = 0.21,
+  ART_haz = 0.18, ART_init_override = 1e-1,
+  hiv_checking = TRUE
+)
+hirr <- 40
+args$Hirr <- c(1, hirr, hirr * 0.43)
+args$ari0 <- 9e-2
+args$initD[, 2:3] <- 500e-5
+args$beta <- 2
+args$cdr <- 0.8
+## ACF: doing this makes B
+## this sets when ACF (measurements) are on
+ne <- args$sim_length
+ITL <- list(
+  (ne - 1 * 12):ne,
+  (ne - 2 * 12):(ne - 1 * 12),
+  (ne - 3 * 12):(ne - 2 * 12),
+  (ne - 4 * 12):(ne - 3 * 12),
+  (ne - 5 * 12):(ne - 4 * 12),
+  (ne - 6 * 12):(ne - 5 * 12),
+  (ne - 7 * 12):(ne - 6 * 12)
+)
+for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
+## break points in ITL as data for plots
+brks <- sort(c(unlist(lapply(ITL, min)), unlist(lapply(ITL, max))))
+brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
+
+## run fwd simulation & test (un-calibrated)
+test <- run.model(args, args$tt, n.particles = 200)
+
+## check un-calibrated notifications & ACF timing
+gp <- plot_compare_noterate_agrgt(test,
+  realdata = TRUE,
+  start_year = start_year
+)
+gp + geom_vline(
+  data = brk_yrs,
+  aes(xintercept = yr),
+  linetype = "dashed", col = "grey"
+)
+
+## ----------- other checks
+## --- inspect demographic outputs
+plot_compare_demog(test, start_year = 2015, by_comp = "age")
+## NOTE we don't expect perfect agreement here because
+## we data are scaled national demographic change
+## and there is much higher HIV prevalence in Blantyre
+
+
+## --- HIV comparisons
+gp <- plot_HIV_dynamic(test,
+  start_year = start_year,
+  by_patch = FALSE
+)
+## comparison data: need to scale national
+data(hivp_mwi)
+hivp_mwi[, step := (Period - start_year) * 12 + 1]
+xdta <- hivp_mwi[Period >= 2015]
+## NOTE scales to match difference seen in data
+xdta[
+  variable == "HIVpc",
+  c("value", "lo", "hi") := .(
+    value * mwi_vs_blantyre_PR,
+    lo * mwi_vs_blantyre_PR,
+    hi * mwi_vs_blantyre_PR
+  )
+]
+gp <- gp +
+  geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) ## +
+  ## xlim(c(2015, 2025))
+gp
+
+ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
+
+## --- zone-wise comparison
+hivpd <- BLASTtbmod::blantyre$hivpre
+hivpd <- data.table(
+  zone = paste0("Zone ", 1:7),
+  step = hivp_mwi[Period == 2015 & variable == "HIVpc", step],
+  variable = "HIVpc", value = hivpd
+)
+gp <- plot_HIV_dynamic(test,
+  start_year = start_year,
+  show_ART = FALSE
+)
+gp <- gp +
+  geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
+  xlim(c(2015, 2025)) + ylim(c(0, NA))
+gp
+
+ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
+
+## HIV in TB
+gp <- plot_HIV_in_TB(test, start_year = start_year) + xlim(c(2015, 2021))
+gp
+
+ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
+
+## ========= INFERENCE
 
 ## create common compare function and filter
 S <- 10
+
+## TODO
 case_compare7v <- function(state, observed, pars = NULL) {
   ans <- rep(0, dim(state)[2])
   for (i in 1:7) {
@@ -39,103 +157,6 @@ filter <- create.particlefilter(
 )
 
 
-## how much higher is Blantyre HIV prevalence than national (data)?
-mwi_vs_blantyre_PR <-
-  mean(BLASTtbmod::blantyre$hivpre) / # 2015
-    hivp_mwi[variable == "HIVpc" & Period == 2015, value]
-## how much higher is Blantyre HIV inc than national: use prev data
-mwi_vs_blantyre <- mwi_vs_blantyre_PR
-
-
-## change parms
-DY <- 5 #years before start_year to start simulation
-args <- get.parms(
-  start_year = start_year - DY, years = years + 9,
-  hivfac = mwi_vs_blantyre, # taken from data
-  hivdecline = 0, hiv_init_override = 0.21,
-  ART_haz = 0.18, ART_init_override = 1e-1,
-  hiv_checking = TRUE
-)
-hirr <- 40
-args$Hirr <- c(1, hirr, hirr * 0.43)
-args$ari0 <- 9e-2
-args$initD[, 2:3] <- 500e-5
-args$beta <- 2
-args$cdr <- 0.8
-## ACF: doing this makes B
-ne <- args$sim_length
-ITL <- list(
-  (ne - 1 * 12):ne,
-  (ne - 2 * 12):(ne - 1 * 12),
-  (ne - 3 * 12):(ne - 2 * 12),
-  (ne - 4 * 12):(ne - 3 * 12),
-  (ne - 5 * 12):(ne - 4 * 12),
-  (ne - 6 * 12):(ne - 5 * 12),
-  (ne - 7 * 12):(ne - 6 * 12)
-)
-for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
-## fwd simulation & test
-test <- run.model(args, args$tt, n.particles = 200)
-## plot_HIV_in_TB(test, start_year = 2015 - DY)
-
-## check
-plot_compare_noterate_agrgt(test, realdata = FALSE, start_year = 2015 - DY) +
-  xlim(c(2015, 2025))
-
-## ----------- other checks
-## --- inspect demographic outputs
-plot_compare_demog(test, start_year = 2015 - DY, by_comp = "age")
-## NOTE we don't expect perfect agreement here because
-## we data are scaled national demographic change
-## and there is much higher HIV prevalence in Blantyre
-
-
-## --- HIV comparisons
-gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, by_patch = FALSE)
-## comparison data: need to scale national
-data(hivp_mwi)
-hivp_mwi[, step := (Period - 2015 + DY) * 12 + 1]
-xdta <- hivp_mwi[Period >= 2015]
-## NOTE scales to match difference seen in data
-xdta[
-  variable == "HIVpc",
-  c("value", "lo", "hi") := .(
-    value * mwi_vs_blantyre_PR,
-    lo * mwi_vs_blantyre_PR,
-    hi * mwi_vs_blantyre_PR
-  )
-]
-gp <- gp +
-  geom_pointrange(data = xdta, aes(ymin = lo, ymax = hi), shape = 1) ## +
-  ## xlim(c(2015, 2025))
-gp
-
-ggsave(gp, filename = here("output/x_hivart.png"), w = 7, h = 5)
-
-
-
-## --- zone-wise comparison
-hivpd <- BLASTtbmod::blantyre$hivpre
-hivpd <- data.table(
-  zone = paste0("Zone ", 1:7),
-  step = (DY) * 12 + 1,
-  variable = "HIVpc", value = hivpd
-)
-gp <- plot_HIV_dynamic(test, start_year = 2015 - DY, show_ART = FALSE)
-gp <- gp +
-  geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
-  xlim(c(2015, 2025)) + ylim(c(0, NA))
-gp
-
-ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
-
-## HIV in TB
-gp <- plot_HIV_in_TB(test, start_year = 2015 - DY) + xlim(c(2015, 2021))
-gp
-
-ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
-
-## --- D0 inference
 ## args$initD
 curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
 D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
@@ -239,7 +260,7 @@ mcmc_pars <- mcstate::pmcmc_parameters$new(
 mcmc_pars$initial()
 mcmc_pars$model(mcmc_pars$initial()) #looks OK
 
-
+## TODO more
 ## A: run inference
 pmcmc_out <- run.pmcmc(
   particle.filter = filter,

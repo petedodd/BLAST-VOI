@@ -13,12 +13,16 @@ load(ress1, file = here("tmpdata/ress1.Rdata"))
 ## function to get out relevant data
 formplotdata <- function(Y, eps = 0.25) {
   n_chain_steps <- dim(Y)[2]
+  cat("Extracting N...\n")
   D1 <- extract.pops.multi(Y, n_chain_steps, out_type = "N")
   D1 <- D1[, .(N = sum(N)), by = .(chain_step, t, patch)]
+  cat("Extracting notes...\n")
   D2 <- extract.pops.multi(Y, n_chain_steps, out_type = "notes")
   D2 <- D2[, .(notes = sum(notes)), by = .(chain_step, t, patch)]
+  cat("Extracting TB deaths...\n")
   D3 <- extract.pops.multi(Y, n_chain_steps, out_type = "TB_deaths")
   D3 <- D3[, .(TB_deaths = sum(TB_deaths)), by = .(chain_step, t, patch)]
+  cat("Merging & aggregating...\n")
   D <- merge(D1, D2, by = c("chain_step", "t", "patch"))
   D <- merge(D, D3, by = c("chain_step", "t", "patch"))
   D[, cummort := cumsum(TB_deaths), by = .(chain_step, patch)]
@@ -41,7 +45,7 @@ formplotdata <- function(Y, eps = 0.25) {
 }
 
 
-## extract data (NOTE memory hungry)
+## extract data (NOTE memory hungry & time consuming)
 E0 <- formplotdata(ress0, eps = 0.05)
 E1 <- formplotdata(ress1, eps = 0.05)
 E0[, acf := "No ACF"]
