@@ -129,37 +129,78 @@ ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
 ## ========= INFERENCE
 
 ## create common compare function and filter
-S <- 10
+S <- 10 # SD in likelihood for notifications per month
 
 ## TODO
 case_compare7v <- function(state, observed, pars = NULL) {
-  ans <- rep(0, dim(state)[2])
+  ## NOTE internal: state is not like test
+  ## state is: n states x n particles 
+  ans <- rep(0, dim(state)[2]) # number of particles
+  ## loop over zones
   for (i in 1:7) {
-    totnotes <- colSums(state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
-      state[BLASTtbmod::bn7[[i]], , drop = TRUE])
+    totnotes <- colSums(
+      state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
+        state[BLASTtbmod::bn7[[i]], , drop = TRUE]
+    )
     totpops <- colSums(state[BLASTtbmod::bn7[[i]], , drop = TRUE])
     notes_modelled <- totnotes / totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
+    SV <- observed$SV
+    ## measurement likelihood contribution
     ans <- ans + dnorm(
       x = notes_modelled, mean = notes_observed,
-      sd = S, log = TRUE
+      sd = SV, log = TRUE
     )
   }
   ans
 }
 
+## adjusting filter data to match simulation times
+## years within sim when there are actualy data
+time_cols <- c("month_start", "month_end", "time_start", "time_end")
+note_cols <- setdiff(colnames(pf_data7), time_cols)
 
+## go 1
+seen <- (2015 - start_year) * 12 #offset
+## seen <- (seen + 1):(seen + 72)
+pf_data7_adj <- pf_data7
+time_cols <- c("month_start", "month_end", "time_start", "time_end")
+note_cols <- setdiff(colnames(pf_data7), time_cols)
+pf_data7_adj[, time_cols] <- pf_data7_adj[, time_cols] + seen
+
+## trying a version that is long
+mn_notes <- colMeans(pf_data7[, note_cols])
+pf_data7_adj <- pf_data7[rep(1, dim(test)[3]), ] #template
+pf_data7_adj[, note_cols] <- matrix(
+  mn_notes,
+  nrow = dim(test)[3], ncol = 7,
+  byrow = TRUE
+)
+seen <- (2015 - start_year) * 12 # offset
+seen <- (seen + 1):(seen + 72)
+pf_data7_adj[seen, note_cols] <- pf_data7[, note_cols]
+pf_data7_adj <- cbind(pf_data7_adj, SV = 30)
+pf_data7_adj[seen, "SV"] <- 10 #true observations
+## TODO need to recreate pf_data7 properly...
+
+
+## make filter
 filter <- create.particlefilter(
-  pf_data7,
-  case_compare7v,
+  data = pf_data7_adj,
+  comparefun = case_compare7v,
   n_particles = 100,
   n_threads = 4
 )
 
-
-## args$initD
-curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
-D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
+## ## temporary convenient test
+## pmcmc_out <- run.pmcmc(
+##   particle.filter = filter,
+##   parms = in_argsrealA,
+##   n.steps = 500, n.burnin = 250, n.chains = 1,
+##   n.threads = 4, n.epochs = 1,
+##   mcmc_pars = mcmc_pars,
+##   save_restart = 72, returnall = TRUE
+## )
 
 
 ## transform
@@ -181,6 +222,9 @@ make_transform <- function(ARGS) {
   }
 }
 
+## exploring priors
+curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
+D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
 
 ## common inference priors
 ## beta

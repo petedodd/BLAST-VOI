@@ -58,11 +58,15 @@ save(EB, file = fn)
 
 load(fn)
 
+start_year <- 2010 #start year used in simulation
+
 ## notifications
 real_dat <- BLASTtbmod::md7
 real_dat[["patch"]] <- paste("Patch", md7$comid)
 real_dat$qty <- "noterate"
 real_dat$acf <- "No ACF"
+real_dat[, yr := 2015 + t / 12]
+
 
 
 ## veritcal lines data
@@ -73,6 +77,7 @@ VL <- data.table(
 VL[, item := rep(2:1, 7)]
 VLW <- dcast(VL, patch ~ item, value.var = "t")
 names(VLW)[2:3] <- c("bot", "top")
+VL[, yr := start_year + t / 12]
 
 
 ## difference
@@ -93,6 +98,8 @@ ED[
   )
 ]
 EB <- rbind(EB, ED[, .(t, patch, qty, hi, lo, mid, acf)])
+EB[, yr := start_year + t / 12]
+
 
 ## renaming
 EB[, zone := gsub("Patch", "Zone", patch)]
@@ -113,7 +120,7 @@ real_dat[, nqty := fcase(
 )]
 
 ## plot
-ggplot(EB, aes(2015 + t / 12,
+ggplot(EB, aes(yr,
   y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
   group = paste(patch, qty, acf)
 )) +
@@ -121,7 +128,7 @@ ggplot(EB, aes(2015 + t / 12,
   geom_line() +
   geom_vline(
     data = VL,
-    aes(xintercept = 2015 + t / 12),
+    aes(xintercept = yr),
     lty = 2, col = "darkgrey"
   ) +
   facet_grid(
@@ -150,7 +157,7 @@ EBR <- EB[qty == "noterate"]
 
 ## plot
 plt <- "Accent"
-ggplot(EBR, aes(2015 + t / 12,
+ggplot(EBR, aes(yr,
   y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
   group = paste(patch, qty, acf)
 )) +
@@ -160,7 +167,7 @@ ggplot(EBR, aes(2015 + t / 12,
   scale_color_brewer(palette = plt) +
   geom_vline(
     data = VL,
-    aes(xintercept = 2015 + t / 12),
+    aes(xintercept = yr),
     lty = 2, col = "darkgrey"
   ) +
   facet_wrap(~zone) +
@@ -173,7 +180,8 @@ ggplot(EBR, aes(2015 + t / 12,
     legend.position.inside = c(0.6, 0.15),
     legend.title = element_blank()
   ) +
-  guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1))
+  guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
+  xlim(2015, NA)
 
 ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
 
