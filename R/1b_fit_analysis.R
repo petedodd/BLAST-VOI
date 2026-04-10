@@ -60,6 +60,14 @@ load(fn)
 
 start_year <- 2010 #start year used in simulation
 
+start_year <- 2015 # start year used in simulation
+
+start_year <- 2014 # start year used in simulation
+
+start_year <- 2014 - 1 / 2 # start year used in simulation
+
+
+
 ## notifications
 real_dat <- BLASTtbmod::md7
 real_dat[["patch"]] <- paste("Patch", md7$comid)
@@ -181,7 +189,8 @@ ggplot(EBR, aes(yr,
     legend.title = element_blank()
   ) +
   guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
-  xlim(2015, NA)
+  ## xlim(2015, NA)
+  xlim(start_year, NA)
 
 ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
 

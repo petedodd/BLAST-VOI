@@ -128,13 +128,56 @@ ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
 
 ## ========= INFERENCE
 
-## create common compare function and filter
-S <- 10 # SD in likelihood for notifications per month
+## update parameters for restart in 2015
+args0 <- args #for safe-keeping
+args <- restart_parms(args0, 60, test)
 
-## TODO
+## === reincorporating old version from 2015
+start_year <- 2015
+years <- 13 + 1 / 6
+## CHECK
+length(as.double(seq(0, 12 * years)))
+args$sim_length
+
+
+## update parameters for restart in 2014
+args0 <- args # for safe-keeping
+args <- restart_parms(args0, 60 - 6, test)
+
+
+## === reincorporating old version from 2015
+start_year <- 2015 - 1 / 2
+years <- 13 + 1 / 6 + 1 / 2
+## CHECK
+length(as.double(seq(0, 12 * years)))
+args$sim_length
+
+
+## Redo ACF
+## ACF: doing this makes B
+ne <- args$sim_length
+ITL <- list(
+  (ne - 1 * 12):ne,
+  (ne - 2 * 12):(ne - 1 * 12),
+  (ne - 3 * 12):(ne - 2 * 12),
+  (ne - 4 * 12):(ne - 3 * 12),
+  (ne - 5 * 12):(ne - 4 * 12),
+  (ne - 6 * 12):(ne - 5 * 12),
+  (ne - 7 * 12):(ne - 6 * 12)
+)
+for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
+
+## ## fwd simulation & re-test
+test2 <- run.model(args, args$tt, n.particles = 200)
+## plot_compare_noterate_agrgt(test2, realdata = TRUE)
+
+
+
+## create common compare function and filter
+S <- 10
 case_compare7v <- function(state, observed, pars = NULL) {
   ## NOTE internal: state is not like test
-  ## state is: n states x n particles 
+  ## state is: n states x n particles
   ans <- rep(0, dim(state)[2]) # number of particles
   ## loop over zones
   for (i in 1:7) {
@@ -145,7 +188,11 @@ case_compare7v <- function(state, observed, pars = NULL) {
     totpops <- colSums(state[BLASTtbmod::bn7[[i]], , drop = TRUE])
     notes_modelled <- totnotes / totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
-    SV <- observed$SV
+    if (is.null(observed$SV)) {
+      SV <- S # pull from top environment
+    } else {
+      SV <- observed$SV # NOTE
+    }
     ## measurement likelihood contribution
     ans <- ans + dnorm(
       x = notes_modelled, mean = notes_observed,
@@ -155,52 +202,26 @@ case_compare7v <- function(state, observed, pars = NULL) {
   ans
 }
 
-## adjusting filter data to match simulation times
-## years within sim when there are actualy data
-time_cols <- c("month_start", "month_end", "time_start", "time_end")
-note_cols <- setdiff(colnames(pf_data7), time_cols)
-
-## go 1
-seen <- (2015 - start_year) * 12 #offset
-## seen <- (seen + 1):(seen + 72)
-pf_data7_adj <- pf_data7
-time_cols <- c("month_start", "month_end", "time_start", "time_end")
-note_cols <- setdiff(colnames(pf_data7), time_cols)
-pf_data7_adj[, time_cols] <- pf_data7_adj[, time_cols] + seen
-
-## trying a version that is long
-mn_notes <- colMeans(pf_data7[, note_cols])
-pf_data7_adj <- pf_data7[rep(1, dim(test)[3]), ] #template
-pf_data7_adj[, note_cols] <- matrix(
-  mn_notes,
-  nrow = dim(test)[3], ncol = 7,
-  byrow = TRUE
-)
-seen <- (2015 - start_year) * 12 # offset
-seen <- (seen + 1):(seen + 72)
-pf_data7_adj[seen, note_cols] <- pf_data7[, note_cols]
-pf_data7_adj <- cbind(pf_data7_adj, SV = 30)
-pf_data7_adj[seen, "SV"] <- 10 #true observations
-## TODO need to recreate pf_data7 properly...
-
-
-## make filter
+## create PF
 filter <- create.particlefilter(
-  data = pf_data7_adj,
-  comparefun = case_compare7v,
+  pf_data7,
+  case_compare7v,
   n_particles = 100,
   n_threads = 4
 )
+## NOTE or see below
 
-## ## temporary convenient test
-## pmcmc_out <- run.pmcmc(
-##   particle.filter = filter,
-##   parms = in_argsrealA,
-##   n.steps = 500, n.burnin = 250, n.chains = 1,
-##   n.threads = 4, n.epochs = 1,
-##   mcmc_pars = mcmc_pars,
-##   save_restart = 72, returnall = TRUE
-## )
+
+
+## --- d0 inference
+## args$initD
+curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
+D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
+
+## scale prior
+D00 <- args$initD
+curve(dlnorm(x, -0.5, 1), n = 1e3, from = 0, to = 5)
+SDpr <- function(x) dlnorm(x, -1 / 2, 1)
 
 
 ## transform
@@ -212,19 +233,12 @@ make_transform <- function(ARGS) {
       list(
         beta = unname(theta[1]),
         ari0 = unname(theta[2]),
-        initD = cbind(
-          rep(0, 7),
-          unname(theta[3:9]),
-          unname(theta[3:9])
-        )
+        initD = D00 * theta[3:9]
       )
     )
   }
 }
 
-## exploring priors
-curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
-D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
 
 ## common inference priors
 ## beta
@@ -246,8 +260,9 @@ ari0 <- mcstate::pmcmc_parameter("ari0",
 proposal_matrix <- diag(c(
   0.05, # beta
   1e-5, # ari0
-  rep(1e-9, 7) # TODO D0
+  rep(0.05, 7) # SDpr
 ))
+
 
 
 ## A: 'TAU' inference
@@ -258,40 +273,38 @@ in_argsrealA$beta <- in_argsrealA$ari0 <- in_argsrealA$initD <- NULL
 ## proposal_matrix <- A$proposal_matrix
 ## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
 
+init_scale <- 0.5
 prior_list <- list(
   beta = beta, ari0 = ari0,
   d1 = mcstate::pmcmc_parameter("d1",
-    initial = 2 * 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d2 = mcstate::pmcmc_parameter("d2",
-    initial = 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d3 = mcstate::pmcmc_parameter("d3",
-    initial = 4 * 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d4 = mcstate::pmcmc_parameter("d4",
-    initial = 4 * 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d5 = mcstate::pmcmc_parameter("d5",
-    initial = 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d6 = mcstate::pmcmc_parameter("d6",
-    initial = 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   ),
   d7 = mcstate::pmcmc_parameter("d7",
-    initial = 150e-5,
-    min = 1e-6, max = 2e-2, prior = D0pr
+    initial = init_scale,
+    min = 1e-6, max = 10, prior = SDpr
   )
 )
-
-
-
 
 ## as list
 mcmc_pars <- mcstate::pmcmc_parameters$new(
@@ -304,7 +317,7 @@ mcmc_pars <- mcstate::pmcmc_parameters$new(
 mcmc_pars$initial()
 mcmc_pars$model(mcmc_pars$initial()) #looks OK
 
-## TODO more
+
 ## A: run inference
 pmcmc_out <- run.pmcmc(
   particle.filter = filter,
@@ -316,20 +329,6 @@ pmcmc_out <- run.pmcmc(
 )
 
 
-## A <- run.pmcmc(
-##   particle.filter = filter,
-##   parms = in_argsrealA,
-##   prior.list = list(
-##     beta = beta,
-##     ari0 = ari0
-##   ),
-##   initial.proposal.matrix = proposal_matrix,
-##   n.steps = 500, n.burnin = 250, n.chains = 1,
-##   n.threads = 4, n.epochs = 1,
-##   save_restart = 72, returnall = TRUE
-## )
-
-## processed_chains <- mcstate::pmcmc_thin(A)
 mcmc1 <- coda::as.mcmc(cbind(
   pmcmc_out$processed_chains$probabilities,
   pmcmc_out$processed_chains$pars
@@ -383,7 +382,7 @@ cfmod <- BLASTtbmod:::stocm$new(counterfactual_pars, 0, ## initial_time,
 
 
 ## simulate models
-maxt <- dim(args$ACFhaz0)[2]
+(maxt <- dim(args$ACFhaz0)[2])
 output_steps <- seq(0, maxt)
 
 ## res will have dimensions (states x particles x samples x time)
@@ -400,3 +399,49 @@ if (!file.exists(fn)) dir.create(fn)
 
 save(ress0, file = here("tmpdata/ress0.Rdata"))
 save(ress1, file = here("tmpdata/ress1.Rdata"))
+
+## ===========================================
+
+
+## === YET ANOTHER GO
+
+## adjusting filter data to match simulation times
+## years within sim when there are actualy data
+time_cols <- c("month_start", "month_end", "time_start", "time_end")
+note_cols <- setdiff(colnames(pf_data7), time_cols)
+
+## trying a version that is long
+mn_notes <- colMeans(pf_data7[, note_cols])
+pf_data7_adj <- pf_data7[rep(1, nrow(pf_data7) + 6), ] # template
+pf_data7_adj[, note_cols] <- matrix(
+  mn_notes,
+  nrow = nrow(pf_data7) + 6, ncol = 7,
+  byrow = TRUE
+)
+
+seen <- (2015 - start_year) * 12 # offset
+seen <- (seen + 1):(seen + 72)
+pf_data7_adj[seen, note_cols] <- pf_data7[, note_cols]
+pf_data7_adj <- cbind(pf_data7_adj, SV = 10)
+pf_data7_adj[seen, "SV"] <- 10 #true observations
+pf_data7_adj <- pf_data7_adj[, c(note_cols, "SV")]
+pf_data7_adj <- cbind(pf_data7_adj, month = seq_len(nrow(pf_data7_adj)))
+
+pf_data7_adj <- mcstate::particle_filter_data(
+  pf_data7_adj,
+  time = "month",
+  rate = 1,
+  initial_time = 0
+)
+
+
+head(pf_data7_adj)
+tail(pf_data7_adj)
+
+## create PF
+filter <- create.particlefilter(
+  pf_data7_adj,
+  case_compare7v,
+  n_particles = 100,
+  n_threads = 4
+)
