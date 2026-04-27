@@ -6,8 +6,8 @@ library(data.table)
 library(BLASTtbmod)
 
 ## load data in this case
-load(ress0, file = here("tmpdata/ress0.Rdata"))
-load(ress1, file = here("tmpdata/ress1.Rdata"))
+load(file = here("tmpdata/ress0.Rdata"))
+load(file = here("tmpdata/ress1.Rdata"))
 
 
 ## function to get out relevant data
@@ -35,7 +35,10 @@ formplotdata <- function(Y, eps = 0.25) {
     mortrate.hi = 1e5 * quantile(TB_deaths / N, 1 - eps),
     cummort.mid = median(cummort),
     cummort.lo = quantile(cummort, eps),
-    cummort.hi = quantile(cummort, 1 - eps)
+    cummort.hi = quantile(cummort, 1 - eps)## ,
+    ## tottbdeaths.mid = median(sum(TB_deaths)),
+    ## tottbdeaths.lo = quantile(sum(TB_deaths), eps),
+    ## tottbdeaths.hi = quantile(sum(TB_deaths), 1 - eps)
   ), by = .(t, patch)]
   aggD <- aggD[t > 1]
   aggD <- melt(aggD, id = c("t", "patch"))
@@ -43,6 +46,7 @@ formplotdata <- function(Y, eps = 0.25) {
   aggD <- dcast(aggD, t + patch + qty ~ type, value.var = "value")
   aggD
 }
+
 
 
 ## extract data (NOTE memory hungry & time consuming)
@@ -58,14 +62,12 @@ save(EB, file = fn)
 
 load(fn)
 
-start_year <- 2010 #start year used in simulation
+## start_year <- 2010 #start year used in simulation
 
 start_year <- 2015 # start year used in simulation
 
-start_year <- 2014 # start year used in simulation
-
-start_year <- 2014 - 1 / 2 # start year used in simulation
-
+## start_year <- 2014 # start year used in simulation
+## start_year <- 2014 - 1 / 2 # start year used in simulation
 
 
 ## notifications
@@ -74,7 +76,6 @@ real_dat[["patch"]] <- paste("Patch", md7$comid)
 real_dat$qty <- "noterate"
 real_dat$acf <- "No ACF"
 real_dat[, yr := 2015 + t / 12]
-
 
 
 ## veritcal lines data
@@ -193,6 +194,35 @@ ggplot(EBR, aes(yr,
   xlim(start_year, NA)
 
 ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
+
+EBR2 <- EB[qty == "tottbdeaths"]
+## plot
+plt <- "Accent"
+ggplot(EBR2, aes(yr,
+  y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
+  group = paste(patch, qty, acf)
+)) +
+  geom_ribbon(alpha = 0.3, col = NA) +
+  geom_line(lwd = 1) +
+  scale_fill_brewer(palette = plt) +
+  scale_color_brewer(palette = plt) +
+  geom_vline(
+    data = VL,
+    aes(xintercept = yr),
+    lty = 2, col = "darkgrey"
+  ) +
+  facet_wrap(~zone) +
+  xlab("Time") +
+  ylab("TB deaths per month") +
+  theme_linedraw() +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.6, 0.15),
+    legend.title = element_blank()
+  ) +
+  guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
+  ## xlim(2015, NA)
+  xlim(start_year, NA)
 
 
 ## ============ looking at figure 4 =========

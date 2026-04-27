@@ -56,10 +56,10 @@ brks <- sort(c(unlist(lapply(ITL, min)), unlist(lapply(ITL, max))))
 brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
 
 ## run fwd simulation & test (un-calibrated)
-test <- run.model(args, args$tt, n.particles = 200)
+out <- run.model(args, args$tt, n.particles = 200)
 
 ## check un-calibrated notifications & ACF timing
-gp <- plot_compare_noterate_agrgt(test,
+gp <- plot_compare_noterate_agrgt(out,
   realdata = TRUE,
   start_year = start_year
 )
@@ -71,14 +71,14 @@ gp + geom_vline(
 
 ## ----------- other checks
 ## --- inspect demographic outputs
-plot_compare_demog(test, start_year = 2015, by_comp = "age")
+plot_compare_demog(out, start_year = 2015, by_comp = "age")
 ## NOTE we don't expect perfect agreement here because
 ## we data are scaled national demographic change
 ## and there is much higher HIV prevalence in Blantyre
 
 
 ## --- HIV comparisons
-gp <- plot_HIV_dynamic(test,
+gp <- plot_HIV_dynamic(out,
   start_year = start_year,
   by_patch = FALSE
 )
@@ -109,7 +109,7 @@ hivpd <- data.table(
   step = hivp_mwi[Period == 2015 & variable == "HIVpc", step],
   variable = "HIVpc", value = hivpd
 )
-gp <- plot_HIV_dynamic(test,
+gp <- plot_HIV_dynamic(out,
   start_year = start_year,
   show_ART = FALSE
 )
@@ -121,16 +121,54 @@ gp
 ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
 
 ## HIV in TB
-gp <- plot_HIV_in_TB(test, start_year = start_year) + xlim(c(2015, 2021))
+gp <- plot_HIV_in_TB(out, start_year = start_year) + xlim(c(2015, 2021))
 gp
 
 ggsave(gp, filename = here("output/x_hivintb.png"), w = 7, h = 5)
+
+## === comparing trends with HIV vs notifications
+real_dat <- as.data.table(BLASTtbmod::TB_notes_HIV_patch)
+real_dat[, `:=`(c("year", "month"), tstrsplit(monthyr, split = "-"))]
+htb <- real_dat[, .(total = sum(total)),
+  by = .(year,
+    hiv = ifelse(hiv == "HIV-", "HIV-", "HIV+")
+  )
+]
+htb[, `:=`(n, sum(total)), by = year]
+htb <- htb[hiv == "HIV+"]
+htb[, `:=`(p, total / n)]
+htb[, `:=`(s, sqrt(p * (1 - p) / n))]
+htb[, `:=`(c("lo", "hi"), .(p - 1.96 * s, p + 1.96 * s))]
+htb[, `:=`(year, as.numeric(year))]
+lmo <- lm(p ~ year, data = htb)
+lmo <- coef(lmo)[2]
+
+real_dat <- BLASTtbmod::md7
+tmp <- real_dat[round(yr) == 2017, .(cf = mean(mid)), by = comid]
+real_dat <- merge(real_dat, tmp, by = "comid", all.x = TRUE)
+tmp <- real_dat[yr >= 2017, .(b = coef(lm(mid ~ yr))[2]), by = comid]
+real_dat <- merge(real_dat, tmp, by = "comid", all.x = TRUE)
+real_dat[, y := cf + (yr - 2017) * b]
+real_dat[, cf := cf + (yr - 2015) * lmo]
+
+
+ggplot(real_dat, aes(yr, mid, group = comid)) +
+  geom_point(shape = 21) +
+  facet_wrap(~comid) +
+  geom_line(aes(y = cf), col = 2) +
+  geom_line(aes(y = y), col = 4) +
+  geom_vline(xintercept = 2017, lty = 2, col = 1) +
+  theme_linedraw() +
+  expand_limits(y = 0) +
+  labs(x = "Year", y = "TB notifications per month")
+
+ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 
 ## ========= INFERENCE
 
 ## update parameters for restart in 2015
 args0 <- args #for safe-keeping
-args <- restart_parms(args0, 60, test)
+args1 <- args <- restart_parms(args0, 60, out)
 
 ## === reincorporating old version from 2015
 start_year <- 2015
@@ -140,18 +178,10 @@ length(as.double(seq(0, 12 * years)))
 args$sim_length
 
 
-## update parameters for restart in 2014
-args0 <- args # for safe-keeping
-args <- restart_parms(args0, 60 - 6, test)
-
-
-## === reincorporating old version from 2015
-start_year <- 2015 - 1 / 2
-years <- 13 + 1 / 6 + 1 / 2
-## CHECK
-length(as.double(seq(0, 12 * years)))
-args$sim_length
-
+## D00 <- args$initD
+## args$initD <- D00 / 4
+## out2 <- run.model(args, args$tt, n.particles = 100)
+## plot_compare_noterate_agrgt(out2, realdata = TRUE)
 
 ## Redo ACF
 ## ACF: doing this makes B
@@ -168,143 +198,142 @@ ITL <- list(
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 
 ## ## fwd simulation & re-test
-test2 <- run.model(args, args$tt, n.particles = 200)
-## plot_compare_noterate_agrgt(test2, realdata = TRUE)
+out2 <- run.model(args, args$tt, n.particles = 200)
+## plot_compare_noterate_agrgt(out2, realdata = TRUE)
+
+## proposal_matrix <- A$proposal_matrix
+## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
 
 
+## ## A: 'TAU' inference
+## for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
+## in_argsrealA <- args
+## in_argsrealA$beta <- in_argsrealA$initD <- NULL # in_argsrealA$ari0 <-
+## ## in_argsrealA$ari0 <- in_argsrealA$initD <- NULL
+## ## in_argsrealA$pDf <- NULL
 
-## create common compare function and filter
-S <- 10
+## ======== NOTES
+## this is working OK ish
+## not replicating trend down
+## args$HIV_dur_ratio <- 6 # BUG checking
+## args$tfr <- 0.02661832
+## args$tfr / 0.5
+## args$cfr / args$dur
+
+## ====================================== working
+##   ## pDs = mcstate::pmcmc_parameter("pDs",
+##   ##   initial = qlnorm(0.5, -6.89, 0.58),
+##   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89, 0.58)
+##   ##   ),
+##   pDf = mcstate::pmcmc_parameter("pDf",
+##     initial = qlnorm(0.5, -2.837, 0.32),
+##     min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32)
+##     ),
+## ==== bunched together for easier experimentation
+S <- 5 # 10*2*2
 case_compare7v <- function(state, observed, pars = NULL) {
-  ## NOTE internal: state is not like test
-  ## state is: n states x n particles
-  ans <- rep(0, dim(state)[2]) # number of particles
-  ## loop over zones
+  ans <- rep(0, dim(state)[2])
   for (i in 1:7) {
-    totnotes <- colSums(
-      state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
-        state[BLASTtbmod::bn7[[i]], , drop = TRUE]
-    )
+    totnotes <- colSums(state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
+      state[BLASTtbmod::bn7[[i]], , drop = TRUE])
     totpops <- colSums(state[BLASTtbmod::bn7[[i]], , drop = TRUE])
     notes_modelled <- totnotes / totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
-    if (is.null(observed$SV)) {
-      SV <- S # pull from top environment
-    } else {
-      SV <- observed$SV # NOTE
-    }
-    ## measurement likelihood contribution
     ans <- ans + dnorm(
       x = notes_modelled, mean = notes_observed,
-      sd = SV, log = TRUE
+      sd = (1 / 5) * notes_observed, log = TRUE
     )
   }
   ans
 }
-
-## create PF
 filter <- create.particlefilter(
   pf_data7,
   case_compare7v,
   n_particles = 100,
   n_threads = 4
 )
-## NOTE or see below
-
-
-
-## --- d0 inference
-## args$initD
-curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
-D0pr <- function(x) dlnorm(x, log(1e0 / 1e5), 1)
-
-## scale prior
-D00 <- args$initD
-curve(dlnorm(x, -0.5, 1), n = 1e3, from = 0, to = 5)
-SDpr <- function(x) dlnorm(x, -1 / 2, 1)
-
-
-## transform
-## making an option outside for greater flexibility
+for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
+in_argsrealA <- args
+in_argsrealA$beta <- NULL
+in_argsrealA$pDf <- NULL
+## in_argsrealA$pDs <- NULL
+in_argsrealA$initD <- NULL # in_argsrealA$ari0 <-
+## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
     c(
       ARGS,
       list(
         beta = unname(theta[1]),
-        ari0 = unname(theta[2]),
-        initD = D00 * theta[3:9]
+        pDf = unname(theta[2]),
+        ## pDs = unname(theta[3]),
+        ## ari0 = unname(theta[2]),
+        initD = cbind(
+          rep(0, 7),
+          unname(theta[3:9]),
+          unname(theta[3:9])
+        )
       )
     )
   }
 }
-
-
-## common inference priors
+## curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
+D0pr <- function(x) dlnorm(x, log(1e1 / 1e5), 1)
 ## beta
 betamn <- 1.678
 betasg <- 0.371
-beta <- mcstate::pmcmc_parameter("beta",
-  initial = qlnorm(0.5, betamn, betasg),
-  min = 1e-6, max = 15,
-  prior = function(x) dlnorm(x, betamn, betasg)
-)
-
-## ari0
-ari0 <- mcstate::pmcmc_parameter("ari0",
-  initial = qlnorm(0.5, log(0.05), 0.75),
-  min = 1e-6, max = 0.5,
-  prior = function(x) dlnorm(x, log(0.05), 0.75)
-)
-
-proposal_matrix <- diag(c(
-  0.05, # beta
-  1e-5, # ari0
-  rep(0.05, 7) # SDpr
-))
-
-
-
-## A: 'TAU' inference
-for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
-in_argsrealA <- args
-in_argsrealA$beta <- in_argsrealA$ari0 <- in_argsrealA$initD <- NULL
-
-## proposal_matrix <- A$proposal_matrix
-## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
-
-init_scale <- 0.5
+initd <- 50e-5
 prior_list <- list(
-  beta = beta, ari0 = ari0,
+  beta = mcstate::pmcmc_parameter("beta",
+    initial = qlnorm(0.25, betamn, betasg),
+    min = 1e-6, max = 15,
+    prior = function(x) dlnorm(x, betamn, betasg)
+  ),
+  pDf = mcstate::pmcmc_parameter("pDf",
+    initial = qlnorm(0.5, -2.837, 0.32),
+    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32)
+  ),
+  ## pDs = mcstate::pmcmc_parameter("pDs",
+  ##   initial = qlnorm(0.5, -6.89, 0.58),
+  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89, 0.58)
+  ##   ),
   d1 = mcstate::pmcmc_parameter("d1",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d2 = mcstate::pmcmc_parameter("d2",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d3 = mcstate::pmcmc_parameter("d3",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d4 = mcstate::pmcmc_parameter("d4",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d5 = mcstate::pmcmc_parameter("d5",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d6 = mcstate::pmcmc_parameter("d6",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   ),
   d7 = mcstate::pmcmc_parameter("d7",
-    initial = init_scale,
-    min = 1e-6, max = 10, prior = SDpr
+    initial = initd,
+    min = 1e-6, max = 2e-2, prior = D0pr
   )
 )
+proposal_matrix <- diag(c(
+  0.05, # beta
+  1e-3, # pDf
+   ## 1e-5, # pDs
+  ## 1e-5, # ari0
+  rep(1e-9, 7)
+))
+
 
 ## as list
 mcmc_pars <- mcstate::pmcmc_parameters$new(
@@ -312,17 +341,17 @@ mcmc_pars <- mcstate::pmcmc_parameters$new(
   proposal_matrix,
   transform = make_transform(in_argsrealA)
 )
-
 ## check
-mcmc_pars$initial()
 mcmc_pars$model(mcmc_pars$initial()) #looks OK
-
+mcmc_pars$initial()
 
 ## A: run inference
 pmcmc_out <- run.pmcmc(
   particle.filter = filter,
   parms = in_argsrealA,
-  n.steps = 500, n.burnin = 250, n.chains = 1,
+  n.steps = 250, n.burnin = 100, n.chains = 1,
+  ## n.steps = 500, n.burnin = 250, n.chains = 1,
+  ## n.steps = 1500, n.burnin = 750, n.chains = 1,
   n.threads = 4, n.epochs = 1,
   mcmc_pars = mcmc_pars,
   save_restart = 72, returnall = TRUE
@@ -346,7 +375,8 @@ coda::rejectionRate(mcmc1)
 ## approach to running counterfactual
 transform_counterfactual <- function(p) {
   pars <- pmcmc_out$pmcmc_run$predict$transform(p)
-  for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- pars$ACFhaz1[i, ITL[[i]]] <- 0.2
+  for (i in 1:7) pars$ACFhaz1[i, ITL[[i]]] <- 0.2
+  for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- 0.2
   pars
 }
 transform_basecase <- function(p) {
@@ -354,26 +384,21 @@ transform_basecase <- function(p) {
   for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- pars$ACFhaz1[i, ITL[[i]]] <- 0.0
   pars
 }
-
-
 ## loop over parameters for basecase
 basecase_pars <- lapply(
   seq_len(nrow(pmcmc_out$pmcmc_run$pars)),
   function(i) transform_basecase(pmcmc_out$pmcmc_run$pars[i, ])
 )
-
 ## loop over parameters for counterfactual
 counterfactual_pars <- lapply(
   seq_len(nrow(pmcmc_out$pmcmc_run$pars)),
   function(i) transform_counterfactual(pmcmc_out$pmcmc_run$pars[i, ])
 )
-
 ## basecase model
 bcmod <- BLASTtbmod:::stocm$new(basecase_pars, 0, ## initial_time,
   n_particles = 1, seed = 1,
   deterministic = TRUE, pars_multi = TRUE
 )
-
 ## counterfactual model
 cfmod <- BLASTtbmod:::stocm$new(counterfactual_pars, 0, ## initial_time,
   n_particles = 1, seed = 1,
@@ -384,7 +409,6 @@ cfmod <- BLASTtbmod:::stocm$new(counterfactual_pars, 0, ## initial_time,
 ## simulate models
 (maxt <- dim(args$ACFhaz0)[2])
 output_steps <- seq(0, maxt)
-
 ## res will have dimensions (states x particles x samples x time)
 res0 <- bcmod$simulate(output_steps)
 res1 <- cfmod$simulate(output_steps)
@@ -401,47 +425,99 @@ save(ress0, file = here("tmpdata/ress0.Rdata"))
 save(ress1, file = here("tmpdata/ress1.Rdata"))
 
 ## ===========================================
+## CHECKS
+## NOTE uses the function from 1b_fit_analysis.R
 
+## extract data (NOTE memory hungry & time consuming)
+E0 <- formplotdata(ress0, eps = 0.05)
+E1 <- formplotdata(ress1, eps = 0.05)
+E0[, acf := "No ACF"]
+E1[, acf := "ACF"]
+EB <- rbind(E0, E1)
+start_year <- 2015 # start year used in simulation
 
-## === YET ANOTHER GO
-
-## adjusting filter data to match simulation times
-## years within sim when there are actualy data
-time_cols <- c("month_start", "month_end", "time_start", "time_end")
-note_cols <- setdiff(colnames(pf_data7), time_cols)
-
-## trying a version that is long
-mn_notes <- colMeans(pf_data7[, note_cols])
-pf_data7_adj <- pf_data7[rep(1, nrow(pf_data7) + 6), ] # template
-pf_data7_adj[, note_cols] <- matrix(
-  mn_notes,
-  nrow = nrow(pf_data7) + 6, ncol = 7,
-  byrow = TRUE
+## notifications
+real_dat <- BLASTtbmod::md7
+real_dat[["patch"]] <- paste("Patch", md7$comid)
+real_dat$qty <- "noterate"
+real_dat$acf <- "No ACF"
+real_dat[, yr := 2015 + t / 12]
+## veritcal lines data
+VL <- data.table(
+  patch = rep(EB[, unique(patch)], each = 2),
+  t = EB[, max(t)] - c(0, rep(1:6, each = 2), 7) * 12
 )
-
-seen <- (2015 - start_year) * 12 # offset
-seen <- (seen + 1):(seen + 72)
-pf_data7_adj[seen, note_cols] <- pf_data7[, note_cols]
-pf_data7_adj <- cbind(pf_data7_adj, SV = 10)
-pf_data7_adj[seen, "SV"] <- 10 #true observations
-pf_data7_adj <- pf_data7_adj[, c(note_cols, "SV")]
-pf_data7_adj <- cbind(pf_data7_adj, month = seq_len(nrow(pf_data7_adj)))
-
-pf_data7_adj <- mcstate::particle_filter_data(
-  pf_data7_adj,
-  time = "month",
-  rate = 1,
-  initial_time = 0
+VL[, item := rep(2:1, 7)]
+VLW <- dcast(VL, patch ~ item, value.var = "t")
+names(VLW)[2:3] <- c("bot", "top")
+VL[, yr := start_year + t / 12]
+## difference
+ED <- dcast(EB[qty == "cummort", .(t, patch, mid, acf)],
+  t + patch ~ acf,
+  value.var = "mid"
 )
+ED[, ddf := `No ACF` - ACF]
+ED <- merge(ED, VLW, by = "patch")
+ED[!(t <= top & t >= bot), ddf := NA_real_]
+ED[, mnddf := min(ddf, na.rm = TRUE), by = patch]
+ED[!is.na(ddf)]
+ED[, ddf := ddf - mnddf]
+ED[
+  ,
+  c("qty", "mid", "lo", "hi", "acf") := .(
+    "ddf", ddf, NA_real_, NA_real_, "No ACF - ACF"
+  )
+]
+EB <- rbind(EB, ED[, .(t, patch, qty, hi, lo, mid, acf)])
+EB[, yr := start_year + t / 12]
+## renaming
+EB[, zone := gsub("Patch", "Zone", patch)]
+VL[, zone := gsub("Patch", "Zone", patch)]
+real_dat[, zone := gsub("Patch", "Zone", patch)]
+
+EB[, nqty := fcase(
+  qty == "noterate", "Notifications per 100,000 per month",
+  qty == "mortrate", "Deaths per 100,000 per month",
+  qty == "cummort", "Cumulative deaths",
+  qty == "ddf", "Difference in cumulative deaths"
+)]
+real_dat[, nqty := fcase(
+  qty == "noterate", "Notifications per 100,000 per month",
+  qty == "mortrate", "Deaths per 100,000 per month",
+  qty == "cummort", "Cumulative deaths",
+  qty == "ddf", "Difference in cumulative deaths"
+)]
+## simplified version
+EBR <- EB[qty == "noterate"]
+
+## plot
+plt <- "Accent"
+ggplot(EBR, aes(yr,
+  y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
+  group = paste(patch, qty, acf)
+)) +
+  geom_ribbon(alpha = 0.3, col = NA) +
+  geom_line(lwd = 1) +
+  scale_fill_brewer(palette = plt) +
+  scale_color_brewer(palette = plt) +
+  geom_vline(
+    data = VL,
+    aes(xintercept = yr),
+    lty = 2, col = "darkgrey"
+  ) +
+  facet_wrap(~zone) +
+  xlab("Time") +
+  ylab("TB notifications per month") +
+  geom_point(data = real_dat, col = 2, shape = 1) +
+  theme_linedraw() +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.6, 0.15),
+    legend.title = element_blank()
+  ) +
+  guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
+  ## xlim(2015, NA)
+  xlim(start_year, NA)
 
 
-head(pf_data7_adj)
-tail(pf_data7_adj)
 
-## create PF
-filter <- create.particlefilter(
-  pf_data7_adj,
-  case_compare7v,
-  n_particles = 100,
-  n_threads = 4
-)
