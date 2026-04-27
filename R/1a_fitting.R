@@ -177,12 +177,6 @@ years <- 13 + 1 / 6
 length(as.double(seq(0, 12 * years)))
 args$sim_length
 
-
-## D00 <- args$initD
-## args$initD <- D00 / 4
-## out2 <- run.model(args, args$tt, n.particles = 100)
-## plot_compare_noterate_agrgt(out2, realdata = TRUE)
-
 ## Redo ACF
 ## ACF: doing this makes B
 ne <- args$sim_length
@@ -204,21 +198,6 @@ out2 <- run.model(args, args$tt, n.particles = 200)
 ## proposal_matrix <- A$proposal_matrix
 ## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
 
-
-## ## A: 'TAU' inference
-## for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
-## in_argsrealA <- args
-## in_argsrealA$beta <- in_argsrealA$initD <- NULL # in_argsrealA$ari0 <-
-## ## in_argsrealA$ari0 <- in_argsrealA$initD <- NULL
-## ## in_argsrealA$pDf <- NULL
-
-## ======== NOTES
-## this is working OK ish
-## not replicating trend down
-## args$HIV_dur_ratio <- 6 # BUG checking
-## args$tfr <- 0.02661832
-## args$tfr / 0.5
-## args$cfr / args$dur
 
 ## ====================================== working
 ##   ## pDs = mcstate::pmcmc_parameter("pDs",
@@ -257,7 +236,8 @@ in_argsrealA <- args
 in_argsrealA$beta <- NULL
 in_argsrealA$pDf <- NULL
 ## in_argsrealA$pDs <- NULL
-in_argsrealA$initD <- NULL # in_argsrealA$ari0 <-
+in_argsrealA$initD <- NULL #
+## in_argsrealA$ari0 <- NULL
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
@@ -292,7 +272,12 @@ prior_list <- list(
   pDf = mcstate::pmcmc_parameter("pDf",
     initial = qlnorm(0.5, -2.837, 0.32),
     min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32)
-  ),
+    ),
+  ## ari0 = mcstate::pmcmc_parameter("ari0",
+  ##   initial = qlnorm(0.5, log(5e-3), 0.75),
+  ##   min = 1e-6, max = 5e-2,
+  ##   prior = function(x) dlnorm(x, log(5e-3), 0.75)
+  ## ),
   ## pDs = mcstate::pmcmc_parameter("pDs",
   ##   initial = qlnorm(0.5, -6.89, 0.58),
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89, 0.58)

@@ -195,36 +195,6 @@ ggplot(EBR, aes(yr,
 
 ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
 
-EBR2 <- EB[qty == "tottbdeaths"]
-## plot
-plt <- "Accent"
-ggplot(EBR2, aes(yr,
-  y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
-  group = paste(patch, qty, acf)
-)) +
-  geom_ribbon(alpha = 0.3, col = NA) +
-  geom_line(lwd = 1) +
-  scale_fill_brewer(palette = plt) +
-  scale_color_brewer(palette = plt) +
-  geom_vline(
-    data = VL,
-    aes(xintercept = yr),
-    lty = 2, col = "darkgrey"
-  ) +
-  facet_wrap(~zone) +
-  xlab("Time") +
-  ylab("TB deaths per month") +
-  theme_linedraw() +
-  theme(
-    legend.position = "inside",
-    legend.position.inside = c(0.6, 0.15),
-    legend.title = element_blank()
-  ) +
-  guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
-  ## xlim(2015, NA)
-  xlim(start_year, NA)
-
-
 ## ============ looking at figure 4 =========
 source(here("R/utils/benefit.R"))
 load(here("data/pops.Rdata"))
