@@ -30,12 +30,12 @@ args <- get.parms(
   hivfac = mwi_vs_blantyre, # taken from data
   hivdecline = 0, hiv_init_override = 0.21,
   ART_haz = 0.18, ART_init_override = 1e-1,
-  hiv_checking = TRUE
+  hiv_checking = FALSE
 )
 hirr <- 40
 args$Hirr <- c(1, hirr, hirr * 0.43)
-args$ari0 <- 9e-2
-args$initD[, 2:3] <- 500e-5
+args$ari0 <- 1e-2
+args$initD[, 2:3] <- 150e-5
 args$beta <- 2
 args$cdr <- 0.8
 ## ACF: doing this makes B
@@ -63,11 +63,13 @@ gp <- plot_compare_noterate_agrgt(out,
   realdata = TRUE,
   start_year = start_year
 )
-gp + geom_vline(
+gp <- gp + geom_vline(
   data = brk_yrs,
   aes(xintercept = yr),
   linetype = "dashed", col = "grey"
 )
+
+ggsave(gp,file = here("tmpdata/fit0.png"), w = 12, h = 10)
 
 ## ----------- other checks
 ## --- inspect demographic outputs
@@ -168,7 +170,7 @@ ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 
 ## update parameters for restart in 2015
 args0 <- args #for safe-keeping
-args1 <- args <- restart_parms(args0, 60, out)
+args1 <- args <- restart_parms2(args0, 60, out)
 
 ## === reincorporating old version from 2015
 start_year <- 2015
@@ -212,32 +214,49 @@ out2 <- run.model(args, args$tt, n.particles = 200)
 S <- 5 # 10*2*2
 case_compare7v <- function(state, observed, pars = NULL) {
   ans <- rep(0, dim(state)[2])
+  ## print(dim(state))
   for (i in 1:7) {
     totnotes <- colSums(state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
-      state[BLASTtbmod::bn7[[i]], , drop = TRUE])
+                        state[BLASTtbmod::bn7[[i]], , drop = TRUE])
+    ## print(str(totnotes))
     totpops <- colSums(state[BLASTtbmod::bn7[[i]], , drop = TRUE])
+    ## print(str(totpops))
     notes_modelled <- totnotes / totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
+    notes_observed <- rep(notes_observed, dim(state)[2]) # to match particles
+    ## cat("modelled -------------\n")
+    ## cat(notes_modelled, "\n")
+    ## cat("observed -------------\n")
+    ## cat(notes_observed, "\n")
+    ## rat <- notes_modelled / notes_observed
+    ## print(mean(rat))
+    ## if(any(rat > 100) || any(rat < 0.01)) {
+    ##   print(mean(rat))
+    ##   stop("Warning: large discrepancy in modelled vs observed notes\n")
+    ## }
     ans <- ans + dnorm(
-      x = notes_modelled, mean = notes_observed,
-      sd = (1 / 5) * notes_observed, log = TRUE
-    )
+                   x = notes_modelled,
+                   mean = notes_observed,
+                   sd = S,## (1 / S) * notes_observed,
+                   log = TRUE
+                 )
   }
   ans
 }
 filter <- create.particlefilter(
   pf_data7,
   case_compare7v,
-  n_particles = 100,
+  n_particles = 50,
   n_threads = 4
 )
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
 in_argsrealA <- args
 in_argsrealA$beta <- NULL
-in_argsrealA$pDf <- NULL
+in_argsrealA$cdr <- NULL
+## in_argsrealA$pDf <- NULL
 ## in_argsrealA$pDs <- NULL
-in_argsrealA$initD <- NULL #
-## in_argsrealA$ari0 <- NULL
+## in_argsrealA$initD <- NULL #
+in_argsrealA$ari0 <- NULL
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
@@ -245,80 +264,105 @@ make_transform <- function(ARGS) {
       ARGS,
       list(
         beta = unname(theta[1]),
-        pDf = unname(theta[2]),
+        cdr = unname(theta[2]),
+        ## pDf = unname(theta[2]),
         ## pDs = unname(theta[3]),
-        ## ari0 = unname(theta[2]),
-        initD = cbind(
-          rep(0, 7),
-          unname(theta[3:9]),
-          unname(theta[3:9])
-        )
+        ari0 = unname(theta[3])
+        ## initD = cbind(
+        ##   rep(0, 7),
+        ##   unname(theta[3:9]),
+        ##   unname(theta[3:9])
+        ## )
+        ## initD = cbind(
+        ##   rep(0, 7),
+        ##   unname(theta[1:7]),
+        ##   unname(theta[1:7])
+        ## )
       )
     )
   }
 }
+## TODO check whether priors should be logged or not
 ## curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
-D0pr <- function(x) dlnorm(x, log(1e1 / 1e5), 1)
+## D0pr <- function(x) dlnorm(x, log(1e1 / 1e5), 1, log = TRUE)
+D0pr <- function(x) -sum((x-50 / 1e5)^2)/(2 * (10e-5)^2)
 ## beta
 betamn <- 1.678
 betasg <- 0.371
-initd <- 50e-5
+initd <- rep(50e-5,7) #1/(1+exp(-lans$par[2:8])) #NOTE
+initp <- qlnorm(0.5, -2.837, 0.32)#1/(1+exp(-lans$par[1])) #NOTE qlnorm(0.5, -2.837, 0.32)
 prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
-    initial = qlnorm(0.25, betamn, betasg),
-    min = 1e-6, max = 15,
-    prior = function(x) dlnorm(x, betamn, betasg)
-  ),
-  pDf = mcstate::pmcmc_parameter("pDf",
-    initial = qlnorm(0.5, -2.837, 0.32),
-    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32)
+    initial = .5,
+    min = 1e-6, max = 10,
+    prior = function(x) dlnorm(x, 0, .5, log = TRUE) #log(x)## 
     ),
-  ## ari0 = mcstate::pmcmc_parameter("ari0",
-  ##   initial = qlnorm(0.5, log(5e-3), 0.75),
-  ##   min = 1e-6, max = 5e-2,
-  ##   prior = function(x) dlnorm(x, log(5e-3), 0.75)
-  ## ),
-  ## pDs = mcstate::pmcmc_parameter("pDs",
-  ##   initial = qlnorm(0.5, -6.89, 0.58),
-  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89, 0.58)
+  cdr = mcstate::pmcmc_parameter("cdr",
+  initial = .75,
+  min = 0.2, max = .95,
+  prior = function(x) dbeta(x, 8, 2, log = TRUE)
+  ),
+  ## beta = mcstate::pmcmc_parameter("beta",
+  ##                                 initial = qlnorm(0.25, betamn, betasg),
+  ##                                 min = 1e-6, max = 15,
+  ##                                 prior = function(x) dlnorm(x, betamn, betasg, log = TRUE)
+  ##                                 ),
+  ## pDf = mcstate::pmcmc_parameter("pDf",
+  ##   initial = initp,
+  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32, log = TRUE)
   ##   ),
-  d1 = mcstate::pmcmc_parameter("d1",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d2 = mcstate::pmcmc_parameter("d2",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d3 = mcstate::pmcmc_parameter("d3",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d4 = mcstate::pmcmc_parameter("d4",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d5 = mcstate::pmcmc_parameter("d5",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d6 = mcstate::pmcmc_parameter("d6",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
-  ),
-  d7 = mcstate::pmcmc_parameter("d7",
-    initial = initd,
-    min = 1e-6, max = 2e-2, prior = D0pr
+  ari0 = mcstate::pmcmc_parameter("ari0",
+    initial = qlnorm(0.5, log(5e-3), 0.75),
+    min = 1e-6, max = 5e-2,
+    prior = function(x) dlnorm(x, log(5e-3), 0.75, log = TRUE)
   )
+  ## pDs = mcstate::pmcmc_parameter("pDs",
+  ##   initial = qlnorm(0.5, -6.89-.5, 0.58),
+  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89-.5, 0.58, log = TRUE)
+  ##   ),
+  ## d1 = mcstate::pmcmc_parameter("d1",
+  ##   initial = initd[1],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d2 = mcstate::pmcmc_parameter("d2",
+  ##   initial = initd[2],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d3 = mcstate::pmcmc_parameter("d3",
+  ##   initial = initd[3],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d4 = mcstate::pmcmc_parameter("d4",
+  ##   initial = initd[4],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d5 = mcstate::pmcmc_parameter("d5",
+  ##   initial = initd[5],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d6 = mcstate::pmcmc_parameter("d6",
+  ##   initial = initd[6],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## ),
+  ## d7 = mcstate::pmcmc_parameter("d7",
+  ##   initial = initd[7],
+  ##   min = 1e-6, max = 2e-2, prior = D0pr
+  ## )
 )
 proposal_matrix <- diag(c(
-  0.05, # beta
-  1e-3, # pDf
-   ## 1e-5, # pDs
-  ## 1e-5, # ari0
-  rep(1e-9, 7)
+  2/1e3, #beta
+  1e-3, # cdr
+  ## 0.05/5, # beta
+  ## 1e-5, # pDf
+  ## 1e-5, # pDs
+  1e-5 # ari0
+  ## rep(1e-9, 7)
+  ## rep(1e-10, 7)
 ))
 
+
+## looking at optimization in a different script
+## optimization.R
 
 ## as list
 mcmc_pars <- mcstate::pmcmc_parameters$new(
@@ -329,29 +373,48 @@ mcmc_pars <- mcstate::pmcmc_parameters$new(
 ## check
 mcmc_pars$model(mcmc_pars$initial()) #looks OK
 mcmc_pars$initial()
+mcmc_pars$prior(mcmc_pars$initial())
 
-## A: run inference
+## optim for start points?
+## see optimization.R
+
+## a: run inference
 pmcmc_out <- run.pmcmc(
   particle.filter = filter,
   parms = in_argsrealA,
   n.steps = 250, n.burnin = 100, n.chains = 1,
-  ## n.steps = 500, n.burnin = 250, n.chains = 1,
+  ## ## n.steps = 500, n.burnin = 250, n.chains = 1,
   ## n.steps = 1500, n.burnin = 750, n.chains = 1,
-  n.threads = 4, n.epochs = 1,
+  n.threads = 10, n.epochs = 1,
+  n.workers = 1,
   mcmc_pars = mcmc_pars,
   save_restart = 72, returnall = TRUE
 )
-
+beepr::beep('coin')
 
 mcmc1 <- coda::as.mcmc(cbind(
   pmcmc_out$processed_chains$probabilities,
   pmcmc_out$processed_chains$pars
 ))
-
 summary(mcmc1)
+cat("ESS:\n")
 coda::effectiveSize(mcmc1)
+cat("Rejection rate:\n")
 coda::rejectionRate(mcmc1)
+cat("Average acceptance rate:\n")
+mean(1-coda::rejectionRate(mcmc1))
 ## plot(mcmc1)
+
+## png(filename = here("tmpdata/mcmc_diagnostics.png"), w = 12, h = 10, units = "in", res = 300)
+## plot(mcmc1[,c(2,4,5,6)])
+## dev.off()
+
+
+## library(bayesplot)
+## color_scheme_set("purple")
+
+p <- bayesplot::mcmc_trace(mcmc1[,c(2,4:ncol(mcmc1))])
+ggsave(p,file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
 
 ## check
 ## plot_compare_noterate_agrgt( pmcmc_out$processed_chains$trajectories$state )
@@ -403,11 +466,11 @@ str(ress0)
 ress1 <- res1[, 1, , ]
 str(ress1)
 
-fn <- here("tmpdata")
-if (!file.exists(fn)) dir.create(fn)
+## fn <- here("tmpdata")
+## if (!file.exists(fn)) dir.create(fn)
 
-save(ress0, file = here("tmpdata/ress0.Rdata"))
-save(ress1, file = here("tmpdata/ress1.Rdata"))
+## save(ress0, file = here("tmpdata/ress0.Rdata"))
+## save(ress1, file = here("tmpdata/ress1.Rdata"))
 
 ## ===========================================
 ## CHECKS
@@ -477,7 +540,7 @@ EBR <- EB[qty == "noterate"]
 
 ## plot
 plt <- "Accent"
-ggplot(EBR, aes(yr,
+tst <- ggplot(EBR, aes(yr,
   y = mid, ymin = lo, ymax = hi, col = acf, fill = acf,
   group = paste(patch, qty, acf)
 )) +
@@ -504,5 +567,6 @@ ggplot(EBR, aes(yr,
   ## xlim(2015, NA)
   xlim(start_year, NA)
 
+ggsave(tst,file = here("tmpdata/fit.png"), w = 12, h = 10)
 
-
+beepr::beep('coin')
