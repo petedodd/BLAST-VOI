@@ -34,8 +34,8 @@ args <- get.parms(
 )
 hirr <- 40
 args$Hirr <- c(1, hirr, hirr * 0.43)
-args$ari0 <- 1e-2
-args$initD[, 2:3] <- 150e-5
+## args$ari0 <- 1e-2
+## args$initD[, 2:3] <- 150e-5
 args$beta <- 2
 args$cdr <- 0.8
 ## ACF: doing this makes B
@@ -57,6 +57,7 @@ brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
 
 ## run fwd simulation & test (un-calibrated)
 out <- run.model(args, args$tt, n.particles = 200)
+## plot_compare_noterate_agrgt(out, realdata = TRUE)
 
 ## check un-calibrated notifications & ACF timing
 gp <- plot_compare_noterate_agrgt(out,
@@ -77,7 +78,6 @@ plot_compare_demog(out, start_year = 2015, by_comp = "age")
 ## NOTE we don't expect perfect agreement here because
 ## we data are scaled national demographic change
 ## and there is much higher HIV prevalence in Blantyre
-
 
 ## --- HIV comparisons
 gp <- plot_HIV_dynamic(out,
@@ -170,7 +170,7 @@ ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 
 ## update parameters for restart in 2015
 args0 <- args #for safe-keeping
-args1 <- args <- restart_parms2(args0, 60, out)
+args1 <- args <- restart_parms(args0, 60, out)
 
 ## === reincorporating old version from 2015
 start_year <- 2015
@@ -200,6 +200,19 @@ out2 <- run.model(args, args$tt, n.particles = 200)
 ## proposal_matrix <- A$proposal_matrix
 ## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
 
+## summary(args$popinit)
+## summary(args0$popinit)
+
+## plot(args$popinit,out2[stvrsn,1,1])
+## max(out2[stvrsn,,])
+## (idx <- which(out2[,,] > 1e6, arr.ind = TRUE))
+## out2[idx]
+## BLASTtbmod::get_cols[idx[,1]]
+
+## test <- extract.pops.multi(out2, 100, out_type = "notes")
+## test <- extract.pops.multi(out2, 100, out_type = "N")
+## summary(test)
+## test[t==1] #looks like 0 initial state
 
 ## ====================================== working
 ##   ## pDs = mcstate::pmcmc_parameter("pDs",
