@@ -178,7 +178,7 @@ ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 
 ## ========= INFERENCE
 
-## update parameters for restart in 2015
+## update parameters for restart in 2015: 2010 + 60*1/12
 args0 <- args #for safe-keeping
 args1 <- args <- restart_parms(args0, 60, out)
 
@@ -202,6 +202,9 @@ ITL <- list(
   (ne - 7 * 12):(ne - 6 * 12)
 )
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
+
+
+## TODO: go ahead and include TBI and D in inference
 
 ## ## fwd simulation & re-test
 out2 <- run.model(args, args$tt, n.particles = 200)
