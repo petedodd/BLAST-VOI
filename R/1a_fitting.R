@@ -27,11 +27,18 @@ mwi_vs_blantyre <- mwi_vs_blantyre_PR
 ## change parms to match HIV data
 args <- get.parms(
   start_year = start_year, years = years,
+  ari0 = 3.75e-3,
   hivfac = mwi_vs_blantyre, # taken from data
   hivdecline = 0, hiv_init_override = 0.21,
   ART_haz = 0.18, ART_init_override = 1e-1,
-  hiv_checking = FALSE
+  hiv_checking = FALSE, debug = FALSE
 )
+## check TBI infection
+## test <- as.data.table(args$popinit)
+## test <- test[, .(value = sum(value)), by = .(state, age)]
+## test[, tot := sum(value), by = age]
+## test[, prop := value / tot]
+## test[age != "a1", weighted.mean(1 - prop, w = value)]
 hirr <- 40
 args$Hirr <- c(1, hirr, hirr * 0.43)
 ## args$ari0 <- 1e-2
@@ -58,6 +65,9 @@ brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
 ## run fwd simulation & test (un-calibrated)
 out <- run.model(args, args$tt, n.particles = 200)
 ## plot_compare_noterate_agrgt(out, realdata = TRUE)
+## TBI 21% in adults in 23/24
+get_TBI_prev(out, 162, grp = "adult") #2023.5
+
 
 ## check un-calibrated notifications & ACF timing
 gp <- plot_compare_noterate_agrgt(out,
@@ -200,20 +210,6 @@ out2 <- run.model(args, args$tt, n.particles = 200)
 ## proposal_matrix <- A$proposal_matrix
 ## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
 
-## summary(args$popinit)
-## summary(args0$popinit)
-
-## plot(args$popinit,out2[stvrsn,1,1])
-## max(out2[stvrsn,,])
-## (idx <- which(out2[,,] > 1e6, arr.ind = TRUE))
-## out2[idx]
-## BLASTtbmod::get_cols[idx[,1]]
-
-## test <- extract.pops.multi(out2, 100, out_type = "notes")
-## test <- extract.pops.multi(out2, 100, out_type = "N")
-## summary(test)
-## test[t==1] #looks like 0 initial state
-
 ## ====================================== working
 ##   ## pDs = mcstate::pmcmc_parameter("pDs",
 ##   ##   initial = qlnorm(0.5, -6.89, 0.58),
@@ -248,11 +244,11 @@ case_compare7v <- function(state, observed, pars = NULL) {
     ##   stop("Warning: large discrepancy in modelled vs observed notes\n")
     ## }
     ans <- ans + dnorm(
-                   x = notes_modelled,
-                   mean = notes_observed,
-                   sd = S,## (1 / S) * notes_observed,
-                   log = TRUE
-                 )
+      x = notes_modelled,
+      mean = notes_observed,
+      sd = S, ## (1 / S) * notes_observed,
+      log = TRUE
+    )
   }
   ans
 }
@@ -269,7 +265,7 @@ in_argsrealA$cdr <- NULL
 ## in_argsrealA$pDf <- NULL
 ## in_argsrealA$pDs <- NULL
 ## in_argsrealA$initD <- NULL #
-in_argsrealA$ari0 <- NULL
+## in_argsrealA$ari0 <- NULL
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
@@ -277,10 +273,10 @@ make_transform <- function(ARGS) {
       ARGS,
       list(
         beta = unname(theta[1]),
-        cdr = unname(theta[2]),
+        cdr = unname(theta[2])
         ## pDf = unname(theta[2]),
         ## pDs = unname(theta[3]),
-        ari0 = unname(theta[3])
+        ## ari0 = unname(theta[3])
         ## initD = cbind(
         ##   rep(0, 7),
         ##   unname(theta[3:9]),
@@ -298,7 +294,7 @@ make_transform <- function(ARGS) {
 ## TODO check whether priors should be logged or not
 ## curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
 ## D0pr <- function(x) dlnorm(x, log(1e1 / 1e5), 1, log = TRUE)
-D0pr <- function(x) -sum((x-50 / 1e5)^2)/(2 * (10e-5)^2)
+D0pr <- function(x) -sum((x - 50 / 1e5)^2) / (2 * (10e-5)^2)
 ## beta
 betamn <- 1.678
 betasg <- 0.371
@@ -308,13 +304,13 @@ prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
     initial = .5,
     min = 1e-6, max = 10,
-    prior = function(x) dlnorm(x, 0, .5, log = TRUE) #log(x)## 
-    ),
-  cdr = mcstate::pmcmc_parameter("cdr",
-  initial = .75,
-  min = 0.2, max = .95,
-  prior = function(x) dbeta(x, 8, 2, log = TRUE)
+    prior = function(x) dlnorm(x, 0, .5, log = TRUE) # log(x)##
   ),
+  cdr = mcstate::pmcmc_parameter("cdr",
+    initial = .75,
+    min = 0.2, max = .95,
+    prior = function(x) dbeta(x, 8, 2, log = TRUE)
+  )
   ## beta = mcstate::pmcmc_parameter("beta",
   ##                                 initial = qlnorm(0.25, betamn, betasg),
   ##                                 min = 1e-6, max = 15,
@@ -324,11 +320,11 @@ prior_list <- list(
   ##   initial = initp,
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32, log = TRUE)
   ##   ),
-  ari0 = mcstate::pmcmc_parameter("ari0",
-    initial = qlnorm(0.5, log(5e-3), 0.75),
-    min = 1e-6, max = 5e-2,
-    prior = function(x) dlnorm(x, log(5e-3), 0.75, log = TRUE)
-  )
+  ## ari0 = mcstate::pmcmc_parameter("ari0",
+  ##   initial = qlnorm(0.5, log(5e-3), 0.75),
+  ##   min = 1e-6, max = 5e-2,
+  ##   prior = function(x) dlnorm(x, log(5e-3), 0.75, log = TRUE)
+  ## )
   ## pDs = mcstate::pmcmc_parameter("pDs",
   ##   initial = qlnorm(0.5, -6.89-.5, 0.58),
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89-.5, 0.58, log = TRUE)
@@ -364,11 +360,11 @@ prior_list <- list(
 )
 proposal_matrix <- diag(c(
   2/1e3, #beta
-  1e-3, # cdr
+  1e-3 # cdr
   ## 0.05/5, # beta
   ## 1e-5, # pDf
   ## 1e-5, # pDs
-  1e-5 # ari0
+  ## 1e-5 # ari0
   ## rep(1e-9, 7)
   ## rep(1e-10, 7)
 ))
@@ -403,7 +399,7 @@ pmcmc_out <- run.pmcmc(
   mcmc_pars = mcmc_pars,
   save_restart = 72, returnall = TRUE
 )
-beepr::beep('coin')
+beepr::beep("coin")
 
 mcmc1 <- coda::as.mcmc(cbind(
   pmcmc_out$processed_chains$probabilities,
@@ -427,7 +423,8 @@ mean(1-coda::rejectionRate(mcmc1))
 ## color_scheme_set("purple")
 
 p <- bayesplot::mcmc_trace(mcmc1[,c(2,4:ncol(mcmc1))])
-ggsave(p,file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
+ggsave(p, file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
+
 
 ## check
 ## plot_compare_noterate_agrgt( pmcmc_out$processed_chains$trajectories$state )
@@ -579,7 +576,9 @@ tst <- ggplot(EBR, aes(yr,
   guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
   ## xlim(2015, NA)
   xlim(start_year, NA)
+tst
 
-ggsave(tst,file = here("tmpdata/fit.png"), w = 12, h = 10)
+ggsave(tst, file = here("tmpdata/fit.png"), w = 12, h = 10)
 
-beepr::beep('coin')
+beepr::beep("coin")
+
