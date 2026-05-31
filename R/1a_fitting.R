@@ -8,12 +8,6 @@ data(in_args) # example
 ## NOTE this data is for 72 months from 2015, so 2015-2020
 data(pf_data7)
 
-## define other parameters
-n_particles <- 10
-start_year <- 2010
-years <- 18 + 1 / 12 #duration of runs
-## this is to accommodate data and ACF experiment phases
-
 ## ========= HIV background & set-up
 
 ## how much higher is Blantyre HIV prevalence than national (data)?
@@ -23,11 +17,30 @@ mwi_vs_blantyre_PR <-
 ## how much higher is Blantyre HIV inc than national: use prev data
 mwi_vs_blantyre <- mwi_vs_blantyre_PR
 
+## ACF helper
+get_ITL <- function(pars) {
+  ne <- pars$sim_length
+  list(
+    (ne - 1 * 12):ne,
+    (ne - 2 * 12):(ne - 1 * 12),
+    (ne - 3 * 12):(ne - 2 * 12),
+    (ne - 4 * 12):(ne - 3 * 12),
+    (ne - 5 * 12):(ne - 4 * 12),
+    (ne - 6 * 12):(ne - 5 * 12),
+    (ne - 7 * 12):(ne - 6 * 12)
+  )
+}
 
+## define other parameters
+n_particles <- 10
+start_year <- 2010
+years <- 18 + 1 / 12 #duration of runs
+## this is to accommodate data and ACF experiment phases
 ## change parms to match HIV data
-args <- get.parms(
+args00 <- args <- get.parms(
   start_year = start_year, years = years,
-  ari0 = 3.75e-3,
+  ari0 = 1e-2,
+  Dinit = cbind(rep(0,7), rep(150e-5,7), rep(150e-5,7)),
   hivfac = mwi_vs_blantyre, # taken from data
   hivdecline = 0, hiv_init_override = 0.21,
   ART_haz = 0.18, ART_init_override = 1e-1,
@@ -43,20 +56,11 @@ hirr <- 40
 args$Hirr <- c(1, hirr, hirr * 0.43)
 ## args$ari0 <- 1e-2
 ## args$initD[, 2:3] <- 150e-5
-args$beta <- 2
+args$beta <- .5
 args$cdr <- 0.8
 ## ACF: doing this makes B
 ## this sets when ACF (measurements) are on
-ne <- args$sim_length
-ITL <- list(
-  (ne - 1 * 12):ne,
-  (ne - 2 * 12):(ne - 1 * 12),
-  (ne - 3 * 12):(ne - 2 * 12),
-  (ne - 4 * 12):(ne - 3 * 12),
-  (ne - 5 * 12):(ne - 4 * 12),
-  (ne - 6 * 12):(ne - 5 * 12),
-  (ne - 7 * 12):(ne - 6 * 12)
-)
+ITL <- get_ITL(args)
 for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 ## break points in ITL as data for plots
 brks <- sort(c(unlist(lapply(ITL, min)), unlist(lapply(ITL, max))))
@@ -67,7 +71,10 @@ out <- run.model(args, args$tt, n.particles = 200)
 ## plot_compare_noterate_agrgt(out, realdata = TRUE)
 ## TBI 21% in adults in 23/24
 get_TBI_prev(out, 162, grp = "adult") #2023.5
-
+## TBI over time
+tbiz <- 1:160
+for(i in seq_along(tbiz)) tbiz[i] <- get_TBI_prev(out, i, grp = "adult")[1]
+plot(tbiz, type = "l")
 
 ## check un-calibrated notifications & ACF timing
 gp <- plot_compare_noterate_agrgt(out,
@@ -80,7 +87,8 @@ gp <- gp + geom_vline(
   linetype = "dashed", col = "grey"
 )
 
-ggsave(gp,file = here("tmpdata/fit0.png"), w = 12, h = 10)
+ggsave(gp, file = here("tmpdata/fit0.png"), w = 12, h = 10)
+
 
 ## ----------- other checks
 ## --- inspect demographic outputs
@@ -179,36 +187,28 @@ ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 ## ========= INFERENCE
 
 ## update parameters for restart in 2015: 2010 + 60*1/12
-args0 <- args #for safe-keeping
-args1 <- args <- restart_parms(args0, 60, out)
+args0 <- args # for safe-keeping
+## (2021 - 2015) * 12
+args1 <- args <- restart_parms(args0, 60, out, 72)
+
+get_TBI_prev(out, 60, grp = "adult") # 2023.5
+sts <- apply(args$popinit, c(1), sum)
+1e2 * sts / sum(sts)
+str(args)
 
 ## === reincorporating old version from 2015
 start_year <- 2015
 years <- 13 + 1 / 6
+start_year + years
 ## CHECK
 length(as.double(seq(0, 12 * years)))
-args$sim_length
 
-## Redo ACF
-## ACF: doing this makes B
-ne <- args$sim_length
-ITL <- list(
-  (ne - 1 * 12):ne,
-  (ne - 2 * 12):(ne - 1 * 12),
-  (ne - 3 * 12):(ne - 2 * 12),
-  (ne - 4 * 12):(ne - 3 * 12),
-  (ne - 5 * 12):(ne - 4 * 12),
-  (ne - 6 * 12):(ne - 5 * 12),
-  (ne - 7 * 12):(ne - 6 * 12)
-)
-for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
-
-
-## TODO: go ahead and include TBI and D in inference
 
 ## ## fwd simulation & re-test
 out2 <- run.model(args, args$tt, n.particles = 200)
 ## plot_compare_noterate_agrgt(out2, realdata = TRUE)
+get_TBI_prev(out2, 1, grp = "adult") # 2015
+get_TBI_prev(out2, 71, grp = "adult") # 2021
 
 ## proposal_matrix <- A$proposal_matrix
 ## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
@@ -258,13 +258,24 @@ case_compare7v <- function(state, observed, pars = NULL) {
 filter <- create.particlefilter(
   pf_data7,
   case_compare7v,
-  n_particles = 50,
+  n_particles = 20,
   n_threads = 4
 )
-for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0 # zero again
+
+filter$run(save_history = TRUE, pars = args)
+fout <- filter$history()
+plot_compare_noterate_agrgt(
+  fout,
+  realdata = TRUE,
+  start_year = start_year
+)
+
+
 in_argsrealA <- args
 in_argsrealA$beta <- NULL
 in_argsrealA$cdr <- NULL
+X00 <- args$popinit
+in_argsrealA$popinit <- NULL
 ## in_argsrealA$pDf <- NULL
 ## in_argsrealA$pDs <- NULL
 ## in_argsrealA$initD <- NULL #
@@ -272,24 +283,68 @@ in_argsrealA$cdr <- NULL
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
+    ## remake the initial state
+    X0 <- X00
+    ## ## TBI: scale U up or down according to theta[3]; different if </> 1
+    ## scale_fac <- unname(theta[3])
+    ## if (scale_fac < 1) {
+    ##   move_out <- X0[1, , , ] * (1 - scale_fac)
+    ##   stat_props <- apply(X0, c(1), sum) # total in each state
+    ##   stat_props <- stat_props / sum(stat_props) # proportions in each state
+    ##   move_in <- outer(stat_props, move_out)
+    ##   X0[1, , , ] <- X0[1, , , ] * scale_fac
+    ##   X0 <- X0 + move_in
+    ## } else {
+    ##   move_out <- X0[2:dim(X0)[1], , , ] * (1 - 1 / scale_fac)
+    ##   move_in <- apply(move_out, c(2, 3, 4), sum) #collapse for U
+    ##   X0[1, , , ] <- X0[1, , , ]  + move_in
+    ##   X0[2:dim(X0)[1], , , ] <- X0[2:dim(X0)[1], , , ] / scale_fac
+    ## }
+    ## X0[X0 < 0] <- 0 # safety
+    ## X0 <- floor(X0) # integerize
+    ## === and now adjust TBD & friends NOTE probably different scales above
+    ## scale_facd <- unname(theta[4])
+    ## tbds <- 4:dim(X0)[1]
+    ## stat_props <- apply(X0, c(1), sum) # total in each state
+    ## stat_props <- stat_props / sum(stat_props) # proportions in each state
+    ## if (scale_facd < 1) {
+    ##   move_out <- X0[tbds, , , ] * (1 - scale_facd)
+    ##   move_in <- apply(move_out, c(2, 3, 4), sum) #collapse over states
+    ##   stat_props <- stat_props[1:3] / sum(stat_props[1:3])
+    ##   move_in <- outer(stat_props, move_in)
+    ##   X0[tbds, , , ] <- X0[tbds, , , ] * scale_facd
+    ##   X0[1:3, , , ] <- X0[1:3, , , ] + move_in
+    ## } else {
+    ##   ## rescale above as TBD different magnitude to rest of population
+    ##   scale_facd <- 1 + (scale_facd - 1) *
+    ##     sum(X0[tbds, , , ]) / sum(X0[1:3, , , ])
+    ##   move_out <- X0[1:3, , , ] * (1 - 1 / scale_facd)
+    ##   move_in <- apply(move_out, c(2, 3, 4), sum) # collapse for tbds
+    ##   stat_props <- stat_props[tbds] / sum(stat_props[tbds])
+    ##   move_in <- outer(stat_props, move_in)
+    ##   X0[tbds, , , ] <- X0[tbds, , , ] + move_in
+    ##   X0[1:3, , , ] <- X0[1:3, , , ] / scale_facd
+    ## }
+    ## X0[X0 < 0] <- 0 # safety
+    ## X0 <- floor(X0) # integerize
+    ## ## === TBD done as simple prevalence
+    ## tbd <- unname(theta[4])
+    ## ## === tbdi
+    ## tbd <- 50e-5
+    ## stat_nos <- apply(X0, c(2, 3, 4), sum) # total in each state
+    ## X0["D", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
+    ## X0["SC", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
+    ## ## stat_nos <- apply(X0, 1, sum) # check
+    ## ## print(stat_nos / sum(stat_nos))
     c(
       ARGS,
       list(
         beta = unname(theta[1]),
-        cdr = unname(theta[2])
+        cdr = unname(theta[2]),
+        popinit = X0
         ## pDf = unname(theta[2]),
         ## pDs = unname(theta[3]),
         ## ari0 = unname(theta[3])
-        ## initD = cbind(
-        ##   rep(0, 7),
-        ##   unname(theta[3:9]),
-        ##   unname(theta[3:9])
-        ## )
-        ## initD = cbind(
-        ##   rep(0, 7),
-        ##   unname(theta[1:7]),
-        ##   unname(theta[1:7])
-        ## )
       )
     )
   }
@@ -307,69 +362,40 @@ prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
     initial = .5,
     min = 1e-6, max = 10,
-    prior = function(x) dlnorm(x, 0, .5, log = TRUE) # log(x)##
+    prior = function(x) dlnorm(x, log(0.5), .5, log = TRUE) # log(x)##
   ),
   cdr = mcstate::pmcmc_parameter("cdr",
     initial = .75,
     min = 0.2, max = .95,
     prior = function(x) dbeta(x, 8, 2, log = TRUE)
-  )
-  ## beta = mcstate::pmcmc_parameter("beta",
-  ##                                 initial = qlnorm(0.25, betamn, betasg),
-  ##                                 min = 1e-6, max = 15,
-  ##                                 prior = function(x) dlnorm(x, betamn, betasg, log = TRUE)
-  ##                                 ),
+    )## ,
+  ## tbi_scale = mcstate::pmcmc_parameter("tbi_scale",
+  ##   initial = 1,
+  ##   min = 0.5, max = 2,
+  ##   prior = function(x) dlnorm(x, 0, .5, log = TRUE)
+  ##   )
+  ## tbd_prev = mcstate::pmcmc_parameter("tbd_prev",
+  ##   initial = 20e-5,
+  ##   min = 1e-5, max = 1e-2,
+  ##   prior = function(x) dlnorm(x, log(5e-4), .25, log = TRUE)
+  ##   )
   ## pDf = mcstate::pmcmc_parameter("pDf",
   ##   initial = initp,
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32, log = TRUE)
   ##   ),
-  ## ari0 = mcstate::pmcmc_parameter("ari0",
-  ##   initial = qlnorm(0.5, log(5e-3), 0.75),
-  ##   min = 1e-6, max = 5e-2,
-  ##   prior = function(x) dlnorm(x, log(5e-3), 0.75, log = TRUE)
-  ## )
   ## pDs = mcstate::pmcmc_parameter("pDs",
   ##   initial = qlnorm(0.5, -6.89-.5, 0.58),
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89-.5, 0.58, log = TRUE)
   ##   ),
-  ## d1 = mcstate::pmcmc_parameter("d1",
-  ##   initial = initd[1],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d2 = mcstate::pmcmc_parameter("d2",
-  ##   initial = initd[2],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d3 = mcstate::pmcmc_parameter("d3",
-  ##   initial = initd[3],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d4 = mcstate::pmcmc_parameter("d4",
-  ##   initial = initd[4],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d5 = mcstate::pmcmc_parameter("d5",
-  ##   initial = initd[5],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d6 = mcstate::pmcmc_parameter("d6",
-  ##   initial = initd[6],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## ),
-  ## d7 = mcstate::pmcmc_parameter("d7",
-  ##   initial = initd[7],
-  ##   min = 1e-6, max = 2e-2, prior = D0pr
-  ## )
 )
 proposal_matrix <- diag(c(
   2/1e3, #beta
-  1e-3 # cdr
+  1e-3  # cdr
+  ## 1e-3 # tbi_scale
+  ## 1e-6 # tbd
   ## 0.05/5, # beta
   ## 1e-5, # pDf
   ## 1e-5, # pDs
-  ## 1e-5 # ari0
-  ## rep(1e-9, 7)
-  ## rep(1e-10, 7)
 ))
 
 
@@ -383,9 +409,12 @@ mcmc_pars <- mcstate::pmcmc_parameters$new(
   transform = make_transform(in_argsrealA)
 )
 ## check
-mcmc_pars$model(mcmc_pars$initial()) #looks OK
+tsta <- mcmc_pars$model(mcmc_pars$initial()) #looks OK
 mcmc_pars$initial()
 mcmc_pars$prior(mcmc_pars$initial())
+sts <- apply(tsta$popinit, c(1), sum)
+1e2 * sts / sum(sts)
+## filter runs over 72 moths from 2015-2021
 
 ## optim for start points?
 ## see optimization.R
@@ -402,20 +431,21 @@ pmcmc_out <- run.pmcmc(
   mcmc_pars = mcmc_pars,
   save_restart = 72, returnall = TRUE
 )
-beepr::beep("coin")
-
 mcmc1 <- coda::as.mcmc(cbind(
   pmcmc_out$processed_chains$probabilities,
   pmcmc_out$processed_chains$pars
 ))
-summary(mcmc1)
 cat("ESS:\n")
 coda::effectiveSize(mcmc1)
 cat("Rejection rate:\n")
 coda::rejectionRate(mcmc1)
 cat("Average acceptance rate:\n")
-mean(1-coda::rejectionRate(mcmc1))
+mean(1 - coda::rejectionRate(mcmc1))
+beepr::beep("coin")
+(smy <- summary(mcmc1))
 ## plot(mcmc1)
+## 1e5 * smy$statistics["tbd_prev", "Mean"]
+
 
 ## png(filename = here("tmpdata/mcmc_diagnostics.png"), w = 12, h = 10, units = "in", res = 300)
 ## plot(mcmc1[,c(2,4,5,6)])
@@ -425,23 +455,47 @@ mean(1-coda::rejectionRate(mcmc1))
 ## library(bayesplot)
 ## color_scheme_set("purple")
 
-p <- bayesplot::mcmc_trace(mcmc1[,c(2,4:ncol(mcmc1))])
-ggsave(p, file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
+p <- bayesplot::mcmc_trace(mcmc1[, c(2, 4:ncol(mcmc1))])
+p
+
+## ggsave(p, file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
 
 
 ## check
 ## plot_compare_noterate_agrgt( pmcmc_out$processed_chains$trajectories$state )
 
-
 ## approach to running counterfactual
+extend_times <- function(p) {
+  newparms <- p
+  restart_step <- 60 # for 2015 in arg0
+  sim_end <- args00$sim_length # end of args0
+  keep <- restart_step:sim_end
+  newparms$tt <- args00$tt[keep]
+  newparms$tt <- newparms$tt - newparms$tt[1] # reset time to 0 at restart
+  newparms$sim_length <- length(newparms$tt)
+  newparms$births_int <- args00$births_int[keep]
+  newparms$HIV_int <- args00$HIV_int[keep]
+  newparms$ART_int <- args00$ART_int[keep]
+  newparms$mu_noHIV_int <- args00$mu_noHIV_int[, keep]
+  newparms$mu_HIV_int <- args00$mu_HIV_int[, keep]
+  newparms$mu_ART_int <- args00$mu_ART_int[, keep]
+  newparms$m_in_int <- args00$m_in_int[, keep]
+  newparms$ACFhaz0 <- args00$ACFhaz0[, keep]
+  newparms$ACFhaz1 <- args00$ACFhaz1[, keep]
+  newparms
+}
 transform_counterfactual <- function(p) {
   pars <- pmcmc_out$pmcmc_run$predict$transform(p)
+  pars <- extend_times(pars)
+  ITL <- get_ITL(pars)
   for (i in 1:7) pars$ACFhaz1[i, ITL[[i]]] <- 0.2
   for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- 0.2
   pars
 }
 transform_basecase <- function(p) {
   pars <- pmcmc_out$pmcmc_run$predict$transform(p)
+  pars <- extend_times(pars)
+  ITL <- get_ITL(pars)
   for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- pars$ACFhaz1[i, ITL[[i]]] <- 0.0
   pars
 }
@@ -456,20 +510,24 @@ counterfactual_pars <- lapply(
   function(i) transform_counterfactual(pmcmc_out$pmcmc_run$pars[i, ])
 )
 ## basecase model
-bcmod <- BLASTtbmod:::stocm$new(basecase_pars, 0, ## initial_time,
+bcmod <- BLASTtbmod:::stocm$new(
+  basecase_pars,
+  0, ## initial_time,
   n_particles = 1, seed = 1,
   deterministic = TRUE, pars_multi = TRUE
 )
 ## counterfactual model
-cfmod <- BLASTtbmod:::stocm$new(counterfactual_pars, 0, ## initial_time,
+cfmod <- BLASTtbmod:::stocm$new(
+  counterfactual_pars,
+  0, ## initial_time,
   n_particles = 1, seed = 1,
   deterministic = TRUE, pars_multi = TRUE
 )
 
 
+
 ## simulate models
-(maxt <- dim(args$ACFhaz0)[2])
-output_steps <- seq(0, maxt)
+output_steps <- basecase_pars[[1]]$tt
 ## res will have dimensions (states x particles x samples x time)
 res0 <- bcmod$simulate(output_steps)
 res1 <- cfmod$simulate(output_steps)
@@ -477,7 +535,10 @@ str(res0)
 ress0 <- res0[, 1, , ]
 str(ress0)
 ress1 <- res1[, 1, , ]
-str(ress1)
+
+
+get_TBI_prev(ress0, 1, grp = "adult")
+
 
 ## fn <- here("tmpdata")
 ## if (!file.exists(fn)) dir.create(fn)
@@ -580,8 +641,8 @@ tst <- ggplot(EBR, aes(yr,
   ## xlim(2015, NA)
   xlim(start_year, NA)
 tst
-
-ggsave(tst, file = here("tmpdata/fit.png"), w = 12, h = 10)
-
 beepr::beep("coin")
+
+## ggsave(tst, file = here("tmpdata/fit.png"), w = 12, h = 10)
+
 
