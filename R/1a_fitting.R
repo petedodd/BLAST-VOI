@@ -186,44 +186,42 @@ ggsave(file = here("output/TrendCF.png"), w = 8, h = 7)
 
 ## ========= INFERENCE
 
-## update parameters for restart in 2015: 2010 + 60*1/12
-args0 <- args # for safe-keeping
-## (2021 - 2015) * 12
-args1 <- args <- restart_parms(args0, 60, out, 72)
+## filter extend to 6 months before 2015
 
-get_TBI_prev(out, 60, grp = "adult") # 2023.5
-sts <- apply(args$popinit, c(1), sum)
-1e2 * sts / sum(sts)
+## (2021 - 2015) * 12
+
+before <- 6
+args1 <- args <- restart_parms(args0, 60 - before, out, 72 + before)
 str(args)
 
+## ## ## fwd simulation & re-test
+## out2 <- run.model(args, args$tt, n.particles = 200)
+## ## plot_compare_noterate_agrgt(out2, realdata = TRUE)
+## get_TBI_prev(out2, 1, grp = "adult") # 2015
+## get_TBI_prev(out2, 71, grp = "adult") # 2021
+
+
+ndat7 <- as.data.table(pf_data7)
+note_names <- paste0("notifrate_", 1:7)
+ndat7 <- ndat7[,..note_names]
+ndat7 <- rbind(ndat7[rep(1, before)], ndat7) # FOCB
+ndat7[, month := seq(1, by = 1, length.out = .N)]
+
+
+pf_data7e <- mcstate::particle_filter_data(
+  data = ndat7, # now using real data
+  time = "month",
+  rate = 1,
+  initial_time = 0
+)
+
+
 ## === reincorporating old version from 2015
-start_year <- 2015
-years <- 13 + 1 / 6
-start_year + years
-## CHECK
-length(as.double(seq(0, 12 * years)))
+start_yeare <- 2015 - before / 12
+yearse <- 13 + 1 / 6 + before / 12
 
-
-## ## fwd simulation & re-test
-out2 <- run.model(args, args$tt, n.particles = 200)
-## plot_compare_noterate_agrgt(out2, realdata = TRUE)
-get_TBI_prev(out2, 1, grp = "adult") # 2015
-get_TBI_prev(out2, 71, grp = "adult") # 2021
-
-## proposal_matrix <- A$proposal_matrix
-## save(proposal_matrix, file = here("tmpdata/proposal_matrix.Rdata"))
-
-## ====================================== working
-##   ## pDs = mcstate::pmcmc_parameter("pDs",
-##   ##   initial = qlnorm(0.5, -6.89, 0.58),
-##   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89, 0.58)
-##   ##   ),
-##   pDf = mcstate::pmcmc_parameter("pDf",
-##     initial = qlnorm(0.5, -2.837, 0.32),
-##     min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32)
-##     ),
 ## ==== bunched together for easier experimentation
-S <- 5 # 10*2*2
+s <- 10 # 10*2*2
 case_compare7v <- function(state, observed, pars = NULL) {
   ans <- rep(0, dim(state)[2])
   ## print(dim(state))
@@ -236,16 +234,6 @@ case_compare7v <- function(state, observed, pars = NULL) {
     notes_modelled <- totnotes / totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
     notes_observed <- rep(notes_observed, dim(state)[2]) # to match particles
-    ## cat("modelled -------------\n")
-    ## cat(notes_modelled, "\n")
-    ## cat("observed -------------\n")
-    ## cat(notes_observed, "\n")
-    ## rat <- notes_modelled / notes_observed
-    ## print(mean(rat))
-    ## if(any(rat > 100) || any(rat < 0.01)) {
-    ##   print(mean(rat))
-    ##   stop("Warning: large discrepancy in modelled vs observed notes\n")
-    ## }
     ans <- ans + dnorm(
       x = notes_modelled,
       mean = notes_observed,
@@ -256,10 +244,10 @@ case_compare7v <- function(state, observed, pars = NULL) {
   ans
 }
 filter <- create.particlefilter(
-  pf_data7,
+  pf_data7e,
   case_compare7v,
-  n_particles = 20,
-  n_threads = 4
+  n_particles = 50,
+  n_threads = 10
 )
 
 filter$run(save_history = TRUE, pars = args)
@@ -267,7 +255,7 @@ fout <- filter$history()
 plot_compare_noterate_agrgt(
   fout,
   realdata = TRUE,
-  start_year = start_year
+  start_year = start_yeare
 )
 
 
@@ -285,57 +273,19 @@ make_transform <- function(ARGS) {
   function(theta) {
     ## remake the initial state
     X0 <- X00
-    ## ## TBI: scale U up or down according to theta[3]; different if </> 1
-    ## scale_fac <- unname(theta[3])
-    ## if (scale_fac < 1) {
-    ##   move_out <- X0[1, , , ] * (1 - scale_fac)
-    ##   stat_props <- apply(X0, c(1), sum) # total in each state
-    ##   stat_props <- stat_props / sum(stat_props) # proportions in each state
-    ##   move_in <- outer(stat_props, move_out)
-    ##   X0[1, , , ] <- X0[1, , , ] * scale_fac
-    ##   X0 <- X0 + move_in
-    ## } else {
-    ##   move_out <- X0[2:dim(X0)[1], , , ] * (1 - 1 / scale_fac)
-    ##   move_in <- apply(move_out, c(2, 3, 4), sum) #collapse for U
-    ##   X0[1, , , ] <- X0[1, , , ]  + move_in
-    ##   X0[2:dim(X0)[1], , , ] <- X0[2:dim(X0)[1], , , ] / scale_fac
-    ## }
-    ## X0[X0 < 0] <- 0 # safety
-    ## X0 <- floor(X0) # integerize
-    ## === and now adjust TBD & friends NOTE probably different scales above
-    ## scale_facd <- unname(theta[4])
-    ## tbds <- 4:dim(X0)[1]
-    ## stat_props <- apply(X0, c(1), sum) # total in each state
-    ## stat_props <- stat_props / sum(stat_props) # proportions in each state
-    ## if (scale_facd < 1) {
-    ##   move_out <- X0[tbds, , , ] * (1 - scale_facd)
-    ##   move_in <- apply(move_out, c(2, 3, 4), sum) #collapse over states
-    ##   stat_props <- stat_props[1:3] / sum(stat_props[1:3])
-    ##   move_in <- outer(stat_props, move_in)
-    ##   X0[tbds, , , ] <- X0[tbds, , , ] * scale_facd
-    ##   X0[1:3, , , ] <- X0[1:3, , , ] + move_in
-    ## } else {
-    ##   ## rescale above as TBD different magnitude to rest of population
-    ##   scale_facd <- 1 + (scale_facd - 1) *
-    ##     sum(X0[tbds, , , ]) / sum(X0[1:3, , , ])
-    ##   move_out <- X0[1:3, , , ] * (1 - 1 / scale_facd)
-    ##   move_in <- apply(move_out, c(2, 3, 4), sum) # collapse for tbds
-    ##   stat_props <- stat_props[tbds] / sum(stat_props[tbds])
-    ##   move_in <- outer(stat_props, move_in)
-    ##   X0[tbds, , , ] <- X0[tbds, , , ] + move_in
-    ##   X0[1:3, , , ] <- X0[1:3, , , ] / scale_facd
-    ## }
-    ## X0[X0 < 0] <- 0 # safety
-    ## X0 <- floor(X0) # integerize
-    ## ## === TBD done as simple prevalence
-    ## tbd <- unname(theta[4])
+    ## === TBD done as simple prevalence
+     tbd <- unname(theta[3])
     ## ## === tbdi
     ## tbd <- 50e-5
-    ## stat_nos <- apply(X0, c(2, 3, 4), sum) # total in each state
-    ## X0["D", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
-    ## X0["SC", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
-    ## ## stat_nos <- apply(X0, 1, sum) # check
-    ## ## print(stat_nos / sum(stat_nos))
+    stat_nos <- apply(X0, c(2, 3, 4), sum) # total in each state
+    X0["D", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
+    X0["SC", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
+    ## ## version by patch
+    ## tbdz <- unname(theta[3:9])## rep(50e-5, 7)
+    ## DZ <- apply(stat_nos, c(2, 3), FUN = function(x) tbdz * x)
+    ## DZ[, 1, ] <- 0 # zero in kids (safety given 2:3 below)
+    ## X0["D", , 2:3, ] <- round(DZ[, 2:3, ])
+    ## X0["SC", , 2:3, ] <- round(DZ[, 2:3, ])
     c(
       ARGS,
       list(
@@ -349,36 +299,29 @@ make_transform <- function(ARGS) {
     )
   }
 }
-## TODO check whether priors should be logged or not
-## curve(dlnorm(x, log(150 / 1e5), 0.99), n = 1e3, from = 0, to = 0.01)
-## D0pr <- function(x) dlnorm(x, log(1e1 / 1e5), 1, log = TRUE)
-D0pr <- function(x) -sum((x - 50 / 1e5)^2) / (2 * (10e-5)^2)
 ## beta
 betamn <- 1.678
 betasg <- 0.371
 initd <- rep(50e-5,7) #1/(1+exp(-lans$par[2:8])) #NOTE
-initp <- qlnorm(0.5, -2.837, 0.32)#1/(1+exp(-lans$par[1])) #NOTE qlnorm(0.5, -2.837, 0.32)
+initp <- qlnorm(0.5, -2.837, 0.32) # 1/(1+exp(-lans$par[1])) #NOTE qlnorm(0.5, -2.837, 0.32)
+ldm <- log(40e-5)
+lds <- 0.05
 prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
     initial = .5,
     min = 1e-6, max = 10,
-    prior = function(x) dlnorm(x, log(0.5), .5, log = TRUE) # log(x)##
+    prior = function(x) dlnorm(x, log(0.5), .25, log = TRUE) # log(x)##
   ),
   cdr = mcstate::pmcmc_parameter("cdr",
-    initial = .75,
-    min = 0.2, max = .95,
-    prior = function(x) dbeta(x, 8, 2, log = TRUE)
-    )## ,
-  ## tbi_scale = mcstate::pmcmc_parameter("tbi_scale",
-  ##   initial = 1,
-  ##   min = 0.5, max = 2,
-  ##   prior = function(x) dlnorm(x, 0, .5, log = TRUE)
-  ##   )
-  ## tbd_prev = mcstate::pmcmc_parameter("tbd_prev",
-  ##   initial = 20e-5,
-  ##   min = 1e-5, max = 1e-2,
-  ##   prior = function(x) dlnorm(x, log(5e-4), .25, log = TRUE)
-  ##   )
+    initial = .65,
+    min = 0.2, max = .9,
+    prior = function(x) dbeta(x, 80, 20, log = TRUE)
+  ),
+  tbd_prev = mcstate::pmcmc_parameter("tbd_prev",
+    initial = 20e-5,
+    min = 1e-5, max = 1e-2,
+    prior = function(x) dlnorm(x, ldm, lds, log = TRUE)
+    )
   ## pDf = mcstate::pmcmc_parameter("pDf",
   ##   initial = initp,
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32, log = TRUE)
@@ -387,16 +330,22 @@ prior_list <- list(
   ##   initial = qlnorm(0.5, -6.89-.5, 0.58),
   ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89-.5, 0.58, log = TRUE)
   ##   ),
+  ## d1 = mcstate::pmcmc_parameter("d1",
+  ##   initial = 20e-5,
+  ##   min = 1e-5, max = 1e-2,
+  ##   prior = function(x) dlnorm(x, ldm, lds, log = TRUE)
+  ## ),
 )
 proposal_matrix <- diag(c(
-  2/1e3, #beta
-  1e-3  # cdr
-  ## 1e-3 # tbi_scale
-  ## 1e-6 # tbd
+  2/1e3 , #beta
+  1e-3,  # cdr
+  1e-6 # tbd
+  ## rep(1e-6,7)
   ## 0.05/5, # beta
   ## 1e-5, # pDf
   ## 1e-5, # pDs
 ))
+## proposal_matrix <- matrix(2e-3, 1, 1)
 
 
 ## looking at optimization in a different script
@@ -414,7 +363,7 @@ mcmc_pars$initial()
 mcmc_pars$prior(mcmc_pars$initial())
 sts <- apply(tsta$popinit, c(1), sum)
 1e2 * sts / sum(sts)
-## filter runs over 72 moths from 2015-2021
+
 
 ## optim for start points?
 ## see optimization.R
@@ -424,12 +373,12 @@ pmcmc_out <- run.pmcmc(
   particle.filter = filter,
   parms = in_argsrealA,
   n.steps = 250, n.burnin = 100, n.chains = 1,
-  ## ## n.steps = 500, n.burnin = 250, n.chains = 1,
+  ## n.steps = 500, n.burnin = 250, n.chains = 1,
   ## n.steps = 1500, n.burnin = 750, n.chains = 1,
-  n.threads = 10, n.epochs = 1,
+  n.threads = 10, n.epochs = 4,
   n.workers = 1,
   mcmc_pars = mcmc_pars,
-  save_restart = 72, returnall = TRUE
+  save_restart = in_argsrealA$sim_length, returnall = TRUE
 )
 mcmc1 <- coda::as.mcmc(cbind(
   pmcmc_out$processed_chains$probabilities,
@@ -443,17 +392,11 @@ cat("Average acceptance rate:\n")
 mean(1 - coda::rejectionRate(mcmc1))
 beepr::beep("coin")
 (smy <- summary(mcmc1))
-## plot(mcmc1)
-## 1e5 * smy$statistics["tbd_prev", "Mean"]
-
-
-## png(filename = here("tmpdata/mcmc_diagnostics.png"), w = 12, h = 10, units = "in", res = 300)
-## plot(mcmc1[,c(2,4,5,6)])
-## dev.off()
-
-
-## library(bayesplot)
-## color_scheme_set("purple")
+plot_compare_noterate_agrgt(
+  pmcmc_out$pmcmc_run$trajectories$state,
+  realdata = TRUE,
+  start_year = start_yeare
+)
 
 p <- bayesplot::mcmc_trace(mcmc1[, c(2, 4:ncol(mcmc1))])
 p
@@ -461,13 +404,12 @@ p
 ## ggsave(p, file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
 
 
-## check
-## plot_compare_noterate_agrgt( pmcmc_out$processed_chains$trajectories$state )
+
 
 ## approach to running counterfactual
 extend_times <- function(p) {
   newparms <- p
-  restart_step <- 60 # for 2015 in arg0
+  restart_step <- 60 - before # for 2015 in arg0
   sim_end <- args00$sim_length # end of args0
   keep <- restart_step:sim_end
   newparms$tt <- args00$tt[keep]
@@ -531,12 +473,8 @@ output_steps <- basecase_pars[[1]]$tt
 ## res will have dimensions (states x particles x samples x time)
 res0 <- bcmod$simulate(output_steps)
 res1 <- cfmod$simulate(output_steps)
-str(res0)
 ress0 <- res0[, 1, , ]
-str(ress0)
 ress1 <- res1[, 1, , ]
-
-
 get_TBI_prev(ress0, 1, grp = "adult")
 
 
@@ -556,7 +494,6 @@ E1 <- formplotdata(ress1, eps = 0.05)
 E0[, acf := "No ACF"]
 E1[, acf := "ACF"]
 EB <- rbind(E0, E1)
-start_year <- 2015 # start year used in simulation
 
 ## notifications
 real_dat <- BLASTtbmod::md7
@@ -572,7 +509,7 @@ VL <- data.table(
 VL[, item := rep(2:1, 7)]
 VLW <- dcast(VL, patch ~ item, value.var = "t")
 names(VLW)[2:3] <- c("bot", "top")
-VL[, yr := start_year + t / 12]
+VL[, yr := start_yeare + t / 12]
 ## difference
 ED <- dcast(EB[qty == "cummort", .(t, patch, mid, acf)],
   t + patch ~ acf,
@@ -591,7 +528,7 @@ ED[
   )
 ]
 EB <- rbind(EB, ED[, .(t, patch, qty, hi, lo, mid, acf)])
-EB[, yr := start_year + t / 12]
+EB[, yr := start_yeare + t / 12]
 ## renaming
 EB[, zone := gsub("Patch", "Zone", patch)]
 VL[, zone := gsub("Patch", "Zone", patch)]
@@ -638,11 +575,7 @@ tst <- ggplot(EBR, aes(yr,
     legend.title = element_blank()
   ) +
   guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
-  ## xlim(2015, NA)
-  xlim(start_year, NA)
+  xlim(2015, NA)
+  ## xlim(start_yeare, NA)
 tst
 beepr::beep("coin")
-
-## ggsave(tst, file = here("tmpdata/fit.png"), w = 12, h = 10)
-
-
