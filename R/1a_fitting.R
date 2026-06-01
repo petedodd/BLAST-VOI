@@ -264,10 +264,8 @@ in_argsrealA$beta <- NULL
 in_argsrealA$cdr <- NULL
 X00 <- args$popinit
 in_argsrealA$popinit <- NULL
-## in_argsrealA$pDf <- NULL
-## in_argsrealA$pDs <- NULL
-## in_argsrealA$initD <- NULL #
-## in_argsrealA$ari0 <- NULL
+in_argsrealA$pDf <- NULL
+in_argsrealA$pDs <- NULL
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
@@ -291,10 +289,9 @@ make_transform <- function(ARGS) {
       list(
         beta = unname(theta[1]),
         cdr = unname(theta[2]),
-        popinit = X0
-        ## pDf = unname(theta[2]),
-        ## pDs = unname(theta[3]),
-        ## ari0 = unname(theta[3])
+        popinit = X0,
+        pDf = unname(theta[4]),
+        pDs = unname(theta[5])
       )
     )
   }
@@ -306,6 +303,7 @@ initd <- rep(50e-5,7) #1/(1+exp(-lans$par[2:8])) #NOTE
 initp <- qlnorm(0.5, -2.837, 0.32) # 1/(1+exp(-lans$par[1])) #NOTE qlnorm(0.5, -2.837, 0.32)
 ldm <- log(40e-5)
 lds <- 0.05
+sc <- 1.75
 prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
     initial = .5,
@@ -321,29 +319,22 @@ prior_list <- list(
     initial = 20e-5,
     min = 1e-5, max = 1e-2,
     prior = function(x) dlnorm(x, ldm, lds, log = TRUE)
-    )
-  ## pDf = mcstate::pmcmc_parameter("pDf",
-  ##   initial = initp,
-  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32, log = TRUE)
-  ##   ),
-  ## pDs = mcstate::pmcmc_parameter("pDs",
-  ##   initial = qlnorm(0.5, -6.89-.5, 0.58),
-  ##   min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89-.5, 0.58, log = TRUE)
-  ##   ),
-  ## d1 = mcstate::pmcmc_parameter("d1",
-  ##   initial = 20e-5,
-  ##   min = 1e-5, max = 1e-2,
-  ##   prior = function(x) dlnorm(x, ldm, lds, log = TRUE)
-  ## ),
+  ),
+  pDf = mcstate::pmcmc_parameter("pDf",
+    initial = initp,
+    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32/sc, log = TRUE)
+  ),
+  pDs = mcstate::pmcmc_parameter("pDs",
+    initial = qlnorm(0.5, -6.89 - .5, 0.58),
+    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89 - .5, 0.58/sc, log = TRUE)
+  )
 )
 proposal_matrix <- diag(c(
   2/1e3 , #beta
   1e-3,  # cdr
-  1e-6 # tbd
-  ## rep(1e-6,7)
-  ## 0.05/5, # beta
-  ## 1e-5, # pDf
-  ## 1e-5, # pDs
+  1e-6, # tbd
+  1e-5, # pDf
+  1e-5 # pDs
 ))
 ## proposal_matrix <- matrix(2e-3, 1, 1)
 
@@ -579,3 +570,5 @@ tst <- ggplot(EBR, aes(yr,
   ## xlim(start_yeare, NA)
 tst
 beepr::beep("coin")
+
+ggsave(tst, file = here("tmpdata/fitng.png"), w = 12, h = 10)
