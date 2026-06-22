@@ -292,56 +292,117 @@ ratios
 
 ## corresponding mixing
 MMo <- make_MM_from_x(xx)
-## TODO compare MM with MMo
 
-## evaluate
-n_sims <- 10
+plot(MMo / sum(MMo), MM / sum(MM))
+abline(a = 0, b = 1, col = 2)
+
+
+## create arguments
+n_particles <- 100
+start_year <- 2015
+years <- 6
+end <- years * 12
+args <- get.parms(
+  start_year = start_year,
+  years = years, Dinit = dinit, ari0 = 5e-3
+)
+args$beta <- 20
+args$cdr <- 0.7
+
+argso <- copy(args)
+argso$MM <- MMo
+
+
+## run model
 set.seed(1234)
-results <- list()
-## loop over simulations
-for (n in 1:n_sims) {
-  cat("Running simulation", n, "\n")
-  results[[n]] <- get_single_results(n, MMo)
-}
-results <- rbindlist(results)
+outputo <- run.model(
+  argso,
+  0:end,
+  n.particles = n_particles,
+  convert = FALSE
+)
 
-## summarize over iterations
-smy <- results[,
-  .(
-    output.FOI.flux = mean(output.FOI.flux),
-    output.note.flux = mean(output.note.flux),
-        output.FOI.flux.sd = sd(output.FOI.flux),
-    output.note.flux.sd = sd(output.note.flux)
-  ),
-  by = .(variable, `source zone`, `recipient zone`)
-]
+## comparison
+flxo <- get_fluxes(outputo)
+
 CF <- data.table(
-  genomic.flux = c(t(FM) / sum(FM)), #transpose due to different convention
-  genomic.flux.sd = c(t(FMse) / sum(FM)) #transpose due to different convention
+  genomic.flux = c(t(FM) / sum(FM)), # transpose due to different convention
+  genomic.flux.sd = c(t(FMse) / sum(FM)),
+  output.FOI.flux = c(flxo$inf_flux),
+  output.FOI.flux.sd = c(flxo$inf_flux_sd),
+  output.note.flux = c(flxo$note_flux),
+  output.note.flux.sd = c(flxo$note_flux_sd)
 )
 CF[, variable := gsub("cum_inf_flux", "", nmz)]
 CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
 CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
-CF <- merge(CF, smy,
-  by = c("variable", "source zone", "recipient zone"), all = TRUE
-)
+
 
 GP <- make_flux_compare_graph(CF)
 
 ggsave(GP, filename = here("output/x_fluxapp_model_opt.png"), w = 10, h = 5)
 
 
-## ==== exploring over different mixing patterns
+## ==== exploring over different mixing patterns impact on fluxes
+## inf vs note
 
 ## loop this as simple PSA
-n_sims <- 10
+n_sims <- 1000
 set.seed(1234)
 results <- list()
 ## loop over simulations
 for (n in 1:n_sims) {
-  cat("Running simulation", n, "\n")
-  results[[n]] <- get_single_results(n)
+  if (!n %% 10) cat("Running simulation", n, "\n")
+  results[[n]] <- get_single_results(n, n_particles = 1) #random MM
 }
 results <- rbindlist(results)
+results
+shft <- mean(results$output.note.flux)
 
-## TODO
+smy <- results[,
+  .(
+    ratio = mean((shft + output.note.flux) / (shft + output.FOI.flux))
+  ),
+  by = .(variable, `source zone`, `recipient zone`)
+]
+smy[, summary(ratio)]
+
+smy[, source_pop := pops[as.integer(`source zone`)]]
+smy[, receipt_pop := pops[as.integer(`recipient zone`)]]
+smy[, source_prev := prev[as.integer(`source zone`)]]
+smy[, receipt_prev := prev[as.integer(`recipient zone`)]]
+
+
+## ----
+A <- ggplot(smy, aes(receipt_pop, ratio, group = receipt_pop)) +
+  geom_boxplot() +
+  theme_classic() +
+  ggpubr::grids() +
+  scale_x_continuous(label = scales::comma) +
+  geom_hline(yintercept = 1, col = 2, lty = 2) +
+  labs(
+    x = "Recipient population",
+    y = "Offset ratio of notification flux to FOI flux"
+  )
+
+B <- ggplot(smy, aes(source_pop, ratio, group = source_pop)) +
+  geom_boxplot() +
+  theme_classic() +
+  ggpubr::grids() +
+  scale_x_continuous(label = scales::comma) +
+  geom_hline(yintercept = 1, col = 2, lty = 2) +
+  labs(
+    x = "Source population",
+    y = "Offset ratio of notification flux to FOI flux"
+  )
+
+
+GP <- ggarrange(
+  A, B,
+  nrow = 1, ncol = 2,
+  common.legend = TRUE,
+  labels = c("A", "B")
+)
+GP
+
+ggsave(GP, filename = here("output/x_fluxapp_note_v_FOI.png"), w = 10, h = 5)

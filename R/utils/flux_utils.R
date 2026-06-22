@@ -7,47 +7,55 @@ note_flux_idx <- grep("cum_note_flux", BLASTtbmod::get_cols)
 inf_flux_idx <- grep("cum_inf_flux", BLASTtbmod::get_cols)
 (nmz <- grep("cum_inf_flux", BLASTtbmod::get_cols, value = TRUE)) # check
 
-## --- extract fluxes from model runs
+## extract fluxes from model runs
 get_fluxes <- function(output) {
-  ## get infection flux
-  tmp <- t(apply(
-    output[inf_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = mean
-  )) # matrix over time, mean over particles
-  tmp_sd <- t(apply(
-    output[inf_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = sd
-  )) # matrix over time, SD over particles
-  inf_flux <- matrix(
-    tail(tmp, n = 1),
-    ncol = args$patch_dims, nrow = args$patch_dims
-  )
-  inf_flux_sd <- matrix(
-    tail(tmp_sd, n = 1),
-    ncol = args$patch_dims, nrow = args$patch_dims
-  )
+  if (dim(output)[2] > 1) {
+    ## get infection flux
+    tmp <- t(apply(
+      output[inf_flux_idx, , ],
+      MARGIN = c(1, 3), FUN = mean
+    )) # matrix over time, mean over particles
+    tmp_sd <- t(apply(
+      output[inf_flux_idx, , ],
+      MARGIN = c(1, 3), FUN = sd
+    )) # matrix over time, SD over particles
+    inf_flux <- matrix(
+      tail(tmp, n = 1),
+      ncol = args$patch_dims, nrow = args$patch_dims
+    )
+    inf_flux_sd <- matrix(
+      tail(tmp_sd, n = 1),
+      ncol = args$patch_dims, nrow = args$patch_dims
+    )
+
+    ## get notification flux
+    tmp <- t(apply(
+      output[note_flux_idx, , ],
+      MARGIN = c(1, 3), FUN = mean
+    )) # matrix over time, mean over particles
+    note_flux <- matrix(
+      tail(tmp, n = 1), # last for cumulative
+      ncol = args$patch_dims, nrow = args$patch_dims
+    )
+    tmp_sd <- t(apply(
+      output[note_flux_idx, , ],
+      MARGIN = c(1, 3), FUN = sd
+    )) # matrix over time, SD over particles
+    note_flux_sd <- matrix(
+      tail(tmp_sd, n = 1), # last for cumulative
+      ncol = args$patch_dims,
+      nrow = args$patch_dims
+    )
+  } else {
+    note_flux <- (output[note_flux_idx, 1, dim(output)[3]])
+    inf_flux <- output[inf_flux_idx, 1, dim(output)[3]]
+    note_flux_sd <- rep(NA_real_, length(note_flux_idx))
+    inf_flux_sd <- rep(NA_real_, length(inf_flux_idx))
+  }
+  ## normalize
   inf_flux_sd <- inf_flux_sd / sum(inf_flux) # normalize
   inf_flux <- inf_flux / sum(inf_flux) # normalize
-
-  ## get notification flux
-  tmp <- t(apply(
-    output[note_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = mean
-  )) # matrix over time, mean over particles
-  note_flux <- matrix(
-    tail(tmp, n = 1), # last for cumulative
-    ncol = args$patch_dims, nrow = args$patch_dims
-  )
-  tmp_sd <- t(apply(
-    output[note_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = sd
-  )) # matrix over time, SD over particles
-  note_flux_sd <- matrix(
-    tail(tmp_sd, n = 1), # last for cumulative
-    ncol = args$patch_dims,
-    nrow = args$patch_dims
-  )
-  note_flux_sd <- note_flux_sd / sum(note_flux) #normalize
+  note_flux_sd <- note_flux_sd / sum(note_flux) # normalize
   note_flux <- note_flux / sum(note_flux) # normalize
 
   return(list(
@@ -57,6 +65,7 @@ get_fluxes <- function(output) {
     inf_flux_sd = inf_flux_sd
   ))
 }
+
 
 ## --- comparison plotter
 make_flux_compare_graph <- function(CF) {
@@ -128,6 +137,7 @@ make_flux_compare_graph <- function(CF) {
   GP
 }
 
+## warpper to get fluxes from MM by running model
 get_fluxes_from_MM <- function(MM, n_particles = 10) {
   ## modify arguments
   args$MM <- MM
@@ -145,21 +155,24 @@ get_fluxes_from_MM <- function(MM, n_particles = 10) {
   return(flx)
 }
 
-get_single_results <- function(n, MM = NULL) {
-  if (is.null(MM)) {
+## run for single given/sampled MM and reformat answers
+get_single_results <- function(n, n_particles = 1, MM = NULL) {
+  if (is.null(MM)) { #random if not provided
     ## create random mixing matrix
     MM <- get_random_MM()
   }
 
   ## get fluxes
-  flx <- get_fluxes_from_MM(MM)
+  flx <- get_fluxes_from_MM(MM, n_particles)
 
   ## comparison
   CF <- data.table(
     iter = n,
     genomic.flux = c(t(FM) / sum(FM)), # transpose
     output.FOI.flux = c(flx$inf_flux),
-    output.note.flux = c(flx$note_flux)
+    output.note.flux = c(flx$note_flux),
+    output.FOI.flux.sd = c(flx$inf_flux_sd),
+    output.note.flux.sd = c(flx$note_flux_sd)
   )
   CF[, variable := gsub("cum_inf_flux", "", nmz)]
   CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
@@ -169,31 +182,14 @@ get_single_results <- function(n, MM = NULL) {
 }
 
 
-
+## simple wrapper to make MM from x
 make_MM_from_x <- function(x) {
   ## create random mixing matrix
-  ## MM <- matrix(exp(c(0, x)), nrow = 7, ncol = 7)
   MM <- matrix(x, nrow = 7, ncol = 7)
   return(MM)
 }
 
-get_error_from_x <- function(x) {
-  MM <- make_MM_from_x(x)
-
-  ## get fluxes
-  flx <- get_fluxes_from_MM(MM, 20)
-
-  ## comparison
-  genomic.flux <- c(t(FM) / sum(FM)) # transpose
-  offset <- mean(genomic.flux)
-  genomic.flux <- genomic.flux + offset
-  output.note.flux <- c(flx$inf_flux) + offset
-
-  ## calculate error
-  err <- sum((output.note.flux / genomic.flux - 1)^2)
-  return(err)
-}
-
+## create MM, run model, get fluxes, compare with genomic flux, return ratio
 get_ratio_from_x <- function(x, n = 20) {
   MM <- make_MM_from_x(x)
 
@@ -211,14 +207,15 @@ get_ratio_from_x <- function(x, n = 20) {
   return(ratio)
 }
 
+## random MM generator
 get_random_MM <- function() {
   ## create random mixing matrix
   MM <- FM <- matrix(runif(49), nrow = 7)
 
   ## sample as assortativity + random
   FM <- FM / sum(FM) # normalize
-  for (i in 1:nrow(MM)) { # loops for transparency
-    for (j in 1:nrow(MM)) {
+  for (i in seq_len(nrow(MM))) { # loops for transparency
+    for (j in seq_len(nrow(MM))) {
       MM[i, j] <- FM[i, j] / (pops[i] * prev[j])
     }
   }
