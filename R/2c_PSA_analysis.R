@@ -11,10 +11,12 @@ gh <- function(x) glue(here(x))
 ## TODO check should this be earlier in workflow
 fn <- here("data/pops.Rdata")
 if (!file.exists(fn)) {
-  zones <- sf::read_sf(
-    here("data/blantyre_7zone_update/blantyre_7zone_update.shp")
-  )
-  zones <- zones[order(zones$zone), ] # order by zone number
+  ## zones <- sf::read_sf(
+  ##   here("data/blantyre_7zone_update/blantyre_7zone_update.shp")
+  ## )
+  ## zones <- zones[order(zones$zone), ] # order by zone number
+  ## TODO
+  zones <- BLASTtbmod::blantyre # use package data instead
   pops <- zones$population # populations
   save(pops, file = fn)
 } else {

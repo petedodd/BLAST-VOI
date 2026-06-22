@@ -4,12 +4,12 @@ library(ggplot2)
 library(ggpubr)
 library(data.table)
 library(sf)
-library(readxl)
 
 ## === read data
 ## prevalence & map
 prev_dat <- readRDS(here("data/dat_scale.rds"))
-zones <- read_sf(here("data/shp/blantyre_7zone_update.shp"))
+## zones <- read_sf(here("data/shp/blantyre_7zone_update.shp")) TODO
+zones <- BLASTtbmod::blantyre
 
 ## notifications TODO provenance?
 load(file = here("data/TBN.Rdata"))
@@ -22,7 +22,7 @@ TBN[, monthyr := lubridate::ymd("2015-01-01") + lubridate::dmonths(month)]
 load(here("data/HIV_inc_1990_2021.Rdata"))
 
 ## === phyloflows output
-FM <- read_excel(here("data/PhyloFlows_7Zone.xlsx"))
+FM <- read.csv(here("data/blantyre_flow_april2026.csv"))
 FM <- FM[, 2:ncol(FM)]
 FM <- as.matrix(FM)
 FMD <- as.data.table(FM)

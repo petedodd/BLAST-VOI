@@ -5,10 +5,9 @@ library(expm)
 library(ggplot2)
 library(ggrepel)
 library(ggpubr)
-library(readxl)
 library(sf)
 library(BLASTtbmod)
-
+library(paletteer)
 
 ## ========= PART 1: analytical approximations to dynamics
 
@@ -42,7 +41,7 @@ M
 nmz <- c("E", "L", "SC", "CD", "T", "R")
 tz <- seq(from = 0, to = 20, by = 0.1)
 Y <- matrix(nrow = length(tz), ncol = 6)
-for (i in 1:nrow(Y)) {
+for (i in seq_len(nrow(Y))) {
   Y[i, ] <- expm(M * tz[i])[, 1]
 }
 colnames(Y) <- nmz
@@ -195,31 +194,35 @@ ggsave(gp, filename = here("output/x_fluxapp.png"), w = 7, h = 5)
 
 
 ## ========= PART 2: fluxes as inputs
+source(here("R/utils/flux_utils.R"))
+
 ## === trying different data for
-zones <- read_sf(here("data/shp/blantyre_7zone_update.shp"))
-zones <- zones[order(zones$zone), ] #order by zone number
+zones <- BLASTtbmod::blantyre
 pops <- zones$population #populations
 prev <- zones$rate_15
-plot(zones$tb_pre, zones$rate_15)
-abline(a = 0, b = 1, col = 2)
+plot(zones$population, zones$rate_15, pch = as.character(zones$zone))
+
 
 ## === phyloflows output
 ## proportion of all transmission that is:
 ## from row/patch
 ## to col/patch
-FM <- read_excel(here("data/PhyloFlows_7Zone.xlsx"))
+FM <- read.csv(here("data/blantyre_flow_april2026.csv"))
+FMse <- read.csv(here("data/blantyre_SE_april2026.csv"))
 FM <- FM[, 2:ncol(FM)]
 FM <- as.matrix(FM)
+FMse <- FMse[, 2:ncol(FMse)]
+FMse <- as.matrix(FMse)
+FMse <- FMse / sum(FM) # NOTE ignores correlation?
 FM <- FM / sum(FM) # correct rounding
-
 
 ## initial prevalences
 dinit <- cbind(rep(0, 7), prev, prev) * 1e-5
 ## mixing from flux
 ## (transpose because rows are from, cols are to)
 MM <- t(FM)
-for (i in 1:nrow(MM)) { #loops for transparency
-  for (j in 1:nrow(MM)) {
+for (i in seq_len(nrow(MM))) { #loops for transparency
+  for (j in seq_len(ncol(MM))) {
     MM[i, j] <- MM[i, j] / (pops[i] * prev[j])
   }
 }
@@ -237,7 +240,7 @@ args <- get.parms(
 args$beta <- 20
 args$cdr <- 0.7
 args$MM <- MM
-args$popinit <- pops #CHECK correct order in data/function
+
 
 ## run model
 set.seed(1234)
@@ -248,193 +251,90 @@ output <- run.model(
   convert = FALSE
 )
 
-## get notification flux
-note_flux_idx <- grep("cum_note_flux", BLASTtbmod::get_cols)
-(nmz <- grep("cum_note_flux", BLASTtbmod::get_cols, value = TRUE)) # check
-tmp <- t(apply(
-  output[note_flux_idx, , ],
-  MARGIN = c(1, 3), FUN = mean
-)) # matrix over time, mean over particles
-tmp_sd <- t(apply(
-  output[note_flux_idx, , ],
-  MARGIN = c(1, 3), FUN = sd
-)) # matrix over time, SD over particles
-matplot(tmp, type = "l")           #plot
-note_flux <- matrix(
-  tail(tmp, n = 1), # last for cumulative
-  ncol = args$patch_dims,
-  nrow = args$patch_dims
-)
-note_flux_sd <- matrix(
-  tail(tmp_sd, n = 1), # last for cumulative
-  ncol = args$patch_dims,
-  nrow = args$patch_dims
-)
-note_flux_sd <- note_flux_sd / max(note_flux) #normalize
-note_flux <- note_flux / sum(note_flux) #normalize
-
-## get infection flux
-inf_flux_idx <- grep("cum_inf_flux", BLASTtbmod::get_cols)
-(nmz <- grep("cum_inf_flux", BLASTtbmod::get_cols, value = TRUE)) # check
-tmp <- t(apply(
-  output[inf_flux_idx, , ],
-  MARGIN = c(1, 3), FUN = mean
-)) # matrix over time, mean over particles
-tmp_sd <- t(apply(
-  output[inf_flux_idx, , ],
-  MARGIN = c(1, 3), FUN = sd
-)) # matrix over time, SD over particles
-matplot(tmp, type = "l")          #plot
-inf_flux <- matrix(
-  tail(tmp, n = 1),
-  ncol = args$patch_dims, nrow = args$patch_dims
-)
-inf_flux_sd <- matrix(
-  tail(tmp_sd, n = 1),
-  ncol = args$patch_dims, nrow = args$patch_dims
-)
-inf_flux_sd <- inf_flux_sd / max(inf_flux) # normalize
-inf_flux <- inf_flux / sum(inf_flux) #normalize
-
 ## comparison
+flx <- get_fluxes(output)
+
 CF <- data.table(
-  genomic.flux = c(t(FM) / max(FM)), #transpose due to different convention
-  output.FOI.flux = c(inf_flux),
-  output.FOI.flux.sd = c(inf_flux_sd),
-  output.note.flux = c(note_flux),
-  output.note.flux.sd = c(note_flux_sd)
+  genomic.flux = c(t(FM) / sum(FM)), #transpose due to different convention
+  genomic.flux.sd = c(t(FMse) / sum(FM)), #transpose due to different convention
+  output.FOI.flux = c(flx$inf_flux),
+  output.FOI.flux.sd = c(flx$inf_flux_sd),
+  output.note.flux = c(flx$note_flux),
+  output.note.flux.sd = c(flx$note_flux_sd)
 )
 CF[, variable := gsub("cum_inf_flux", "", nmz)]
 CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
 CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
 
-## FOI vs note
-GP1 <- ggplot(
-  CF,
-  aes(
-    x = output.FOI.flux,
-    xmin = output.FOI.flux - 1.96 * output.FOI.flux.sd,
-    xmax = output.FOI.flux + 1.96 * output.FOI.flux.sd,
-    y = output.note.flux,
-    ymin = output.note.flux - 1.96 * output.note.flux.sd,
-    ymax = output.note.flux + 1.96 * output.note.flux.sd,
-    label = variable, shape = `source zone`, col = `source zone`
-  )
-) +
-  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
-  scale_shape_manual(values = 0:6) +
-  geom_errorbar(width = 1e-2, alpha = 0.4) +
-  geom_errorbarh(width = 1e-2, alpha = 0.4) +
-  geom_point(size = 2) +
-  geom_text_repel(show.legend = FALSE) +
-  theme_classic() +
-  ggpubr::grids() +
-  xlab("Model infection flux") +
-  ylab("Model notification flux") +
-  theme(legend.position = "top") +
-  guides(shape = guide_legend(nrow = 1, byrow = TRUE))
 
-
-
-## data vs note
-GP2 <- ggplot(
-  CF,
-  aes(
-    x = genomic.flux,
-    y = output.note.flux,
-    ymin = output.note.flux - 1.96 * output.note.flux.sd,
-    ymax = output.note.flux + 1.96 * output.note.flux.sd,
-    label = variable, shape = `source zone`, col = `source zone`
-  )
-) +
-  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
-  scale_shape_manual(values = 0:6) +
-  geom_errorbar(width = 1e-2, alpha = 0.4) +
-  geom_point(size = 2) +
-  geom_text_repel(show.legend = FALSE) +
-  theme_classic() +
-  ggpubr::grids() +
-  xlab("Genomic-derived flux") +
-  ylab("Model notification flux") +
-  theme(legend.position = "top") +
-  guides(shape = guide_legend(nrow = 1, byrow = TRUE))
-GP2
-
-## combine plot
-GP <- ggarrange(
-  GP1, GP2,
-  nrow = 1, ncol = 2,
-  common.legend = TRUE,
-  labels = c("A", "B")
-)
+GP <- make_flux_compare_graph(CF)
 
 ggsave(GP,filename = here("output/x_fluxapp_model.png"), w = 10, h = 5)
 
 
-## ==== exploring over different mixing patterns
-get_single_results <- function(n) {
-  ## create random mixing matrix
-  MM <- FM <- matrix(runif(49), nrow = 7)
-  ## sample as assortativity + random
-  ## FM <- runif(1) * FM / 7
-  ## diag(FM) <- runif(7)
-  FM <- FM / sum(FM) # normalize
-  for (i in 1:nrow(MM)) { # loops for transparency
-    for (j in 1:nrow(MM)) {
-      MM[i, j] <- FM[i, j] / (pops[i] * prev[j])
-    }
+## === optimization over fluxes
+xx <- rep(0.5, 49)
+maxit <- 1e3
+tol <- 1e-3
+k <- 1
+err <- 1
+while (k < maxit && err > tol) {
+  if(k %% 10 == 0) {
+    cat("Iteration", k, "Error", err, "\n")
   }
-  MM <- MM / max(Re(eigen(MM)$values)) # renormalize
-  ## modify arguments
-  args$MM <- MM
-
-  ## run model
-  output <- run.model(
-    args,
-    0:end,
-    n.particles = n_particles,
-    convert = FALSE
-  )
-
-  ## get infection flux
-  tmp <- t(apply(
-    output[inf_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = mean
-  )) # matrix over time, mean over particles
-  inf_flux <- matrix(
-    tail(tmp, n = 1),
-    ncol = args$patch_dims, nrow = args$patch_dims
-  )
-  inf_flux <- inf_flux / sum(inf_flux) # normalize
-
-  ## get notification flux
-  tmp <- t(apply(
-    output[note_flux_idx, , ],
-    MARGIN = c(1, 3), FUN = mean
-  )) # matrix over time, mean over particles
-  note_flux <- matrix(
-    tail(tmp, n = 1), # last for cumulative
-    ncol = args$patch_dims, nrow = args$patch_dims
-  )
-  note_flux <- note_flux / sum(note_flux) # normalize
-
-  ## comparison
-  CF <- data.table(
-    iter = n,
-    genomic.flux = c(t(FM) / sum(FM)), # transpose
-    output.FOI.flux = c(inf_flux),
-    output.note.flux = c(note_flux)
-  )
-  CF[, variable := gsub("cum_inf_flux", "", nmz)]
-  CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
-  CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
-
-  return(CF)
+  ratios <- get_ratio_from_x(xx)
+  xx <- xx / ratios
+  err <- sum((ratios - 1)^2)
+  k <- k + 1
 }
+xx
+ratios
 
+## corresponding mixing
+MMo <- make_MM_from_x(xx)
+## TODO compare MM with MMo
+
+## evaluate
+n_sims <- 10
+set.seed(1234)
+results <- list()
+## loop over simulations
+for (n in 1:n_sims) {
+  cat("Running simulation", n, "\n")
+  results[[n]] <- get_single_results(n, MMo)
+}
+results <- rbindlist(results)
+
+## summarize over iterations
+smy <- results[,
+  .(
+    output.FOI.flux = mean(output.FOI.flux),
+    output.note.flux = mean(output.note.flux),
+        output.FOI.flux.sd = sd(output.FOI.flux),
+    output.note.flux.sd = sd(output.note.flux)
+  ),
+  by = .(variable, `source zone`, `recipient zone`)
+]
+CF <- data.table(
+  genomic.flux = c(t(FM) / sum(FM)), #transpose due to different convention
+  genomic.flux.sd = c(t(FMse) / sum(FM)) #transpose due to different convention
+)
+CF[, variable := gsub("cum_inf_flux", "", nmz)]
+CF[, `recipient zone` := gsub("\\[", "", gsub(",.\\]", "", variable))]
+CF[, `source zone` := gsub("\\]", "", gsub("\\[.,", "", variable))]
+CF <- merge(CF, smy,
+  by = c("variable", "source zone", "recipient zone"), all = TRUE
+)
+
+GP <- make_flux_compare_graph(CF)
+
+ggsave(GP, filename = here("output/x_fluxapp_model_opt.png"), w = 10, h = 5)
+
+
+## ==== exploring over different mixing patterns
 
 ## loop this as simple PSA
-n_sims <- 100
+n_sims <- 10
 set.seed(1234)
 results <- list()
 ## loop over simulations
@@ -444,43 +344,4 @@ for (n in 1:n_sims) {
 }
 results <- rbindlist(results)
 
-## summarize over iterations
-smy <- results[,
-  .(
-    truth = mean(genomic.flux),
-    infection = mean(output.FOI.flux),
-    notification = mean(output.note.flux),
-    truth.lo = quantile(genomic.flux, 0.025),
-    infection.lo = quantile(output.FOI.flux, 0.025),
-    notification.lo = quantile(output.note.flux, 0.025),
-    truth.hi = quantile(genomic.flux, 1 - 0.025),
-    infection.hi = quantile(output.FOI.flux, 1 - 0.025),
-    notification.hi = quantile(output.note.flux, 1 - 0.025)
-  ),
-  by = .(variable, `source zone`, `recipient zone`)
-]
-
-
-## plot data vs note
-GP <- ggplot(
-  smy,
-  aes(
-    x = truth, xmin = truth.lo, xmax = truth.hi,
-    y = notification, ymin = notification.lo, ymax = notification.hi,
-    label = variable, shape = `source zone`, col = `source zone`
-  )
-) +
-  geom_abline(intercept = 0, slope = 1, col = 2, lty = 2) +
-  scale_shape_manual(values = 0:6) +
-  geom_errorbar(width = 1e-2, alpha = 0.4) +
-  geom_errorbar(width = 1e-2, alpha = 0.4, orientation = "y") +
-  geom_point(size = 2) +
-  geom_text_repel(show.legend = FALSE) +
-  theme_classic() +
-  ggpubr::grids() +
-  ylab("Mixing flux") +
-  xlab("Model notification flux") +
-  theme(legend.position = "top") +
-  guides(shape = guide_legend(nrow = 1, byrow = TRUE)) +
-  coord_fixed()
-GP
+## TODO
