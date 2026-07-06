@@ -8,10 +8,9 @@ library(sf)
 ## === read data
 ## prevalence & map
 prev_dat <- readRDS(here("data/dat_scale.rds"))
-## zones <- read_sf(here("data/shp/blantyre_7zone_update.shp")) TODO
 zones <- BLASTtbmod::blantyre
 
-## notifications TODO provenance?
+## notifications
 load(file = here("data/TBN.Rdata"))
 load(file = here("data/TB_notes_HIV_patch.Rdata"))
 TB_notes_HIV_patch <- as.data.table(TB_notes_HIV_patch)
@@ -34,13 +33,13 @@ FMDM[, c("From zone", "To zone") := .(fromZone, toZone)]
 
 
 ## === panel A: map++
-## construct map
+## construct map 10⁻³ 10³ 10⁵
 mz <- zones
 mz$txt <- paste0(
   "zone: ", zones$zone, "\n",
   "pop: ", round(zones$population / 1e3), "K\n",
-  "HIV:", round(zones$hiv_pre * 1e2), "%\n",
-  "TB:", round(zones$rate_15), "\n"
+  "HIV: ", round(zones$hivpre * 1e2), "%\n",
+  "TB: ", round(zones$rate_15), " /10⁵y\n"
 )
 XY <- matrix(
   unlist(st_geometry(st_centroid(mz$geometry))),
@@ -48,10 +47,17 @@ XY <- matrix(
 )
 
 ## plot
+yvc <- 1e-2 * c(1, 1, 1 / 2, 0, 1 / 2, 1, 0)
+xvc <- rep(1e-2, 7)
+xvc[c(1, 5)] <- xvc[c(1, 5)] + 0.5e-2
+xvc[5] <- xvc[5] + 0.5e-2
 fig1a <- ggplot() +
   geom_sf(data = mz, aes(fill = as.factor(zone))) +
   scale_fill_brewer(palette = "Set3") +
-  geom_text(aes(x = XY[, 1], y = XY[, 2], label = mz$txt)) +
+  geom_text(
+    aes(x = XY[, 1] - xvc, y = XY[, 2] - yvc, label = mz$txt),
+    hjust = 0
+  ) +
   xlab("") +
   ylab("") +
   theme_minimal() +
@@ -73,7 +79,7 @@ fig1b <- ggplot(TBNR, aes(monthyr, notes)) +
   theme_classic() +
   grids() +
   xlab("Year") +
-  ylab("TB notifications\n per capita") +
+  ylab("TB notification\n rate per 10⁵y") +
   expand_limits(y = c(0, NA))
 
 fig1b
@@ -89,19 +95,22 @@ fig1c <- ggplot(
   theme_classic() +
   grids() +
   xlab("Year") +
-  ylab("HIV incidence\n rate (per 1000)")
+  ylab("HIV incidence\n  rate per 10³y")
 
 fig1c
 
 ## === panel D: something genomic/fluxy
+FMDM[, value_text := paste0(round(100 * value, 1), "%")]
+
 fig1d <- ggplot(
   FMDM,
-  aes(`From zone`, `To zone`, fill = value, label = value)
+  aes(`From zone`, `To zone`, fill = value, label = value_text)
 ) +
   geom_tile() +
   geom_text(col = 2) +
   theme_minimal() +
   theme(legend.position = "none")
+
 
 fig1d
 
@@ -129,4 +138,11 @@ Fig1
 ggsave(here("output/Figure1.png"),
   Fig1,
   width = 10, height = 6, dpi = 300
+)
+
+## save
+ggsave(here("output/Figure1.pdf"),
+  Fig1,
+  width = 10, height = 6,
+  device = cairo_pdf
 )
