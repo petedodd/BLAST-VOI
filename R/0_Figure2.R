@@ -206,3 +206,4 @@ FC <- (
 FC
 
 ggsave(here("output/Figure2.png"), w = 8, h = 8)
+ggsave(here("output/Figure2.pdf"), w = 8, h = 8)
