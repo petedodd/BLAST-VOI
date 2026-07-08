@@ -47,16 +47,8 @@ args00 <- args <- get.parms(
   ART_haz = 0.18, ART_init_override = 1e-1,
   hiv_checking = FALSE, debug = FALSE
 )
-## check TBI infection
-## test <- as.data.table(args$popinit)
-## test <- test[, .(value = sum(value)), by = .(state, age)]
-## test[, tot := sum(value), by = age]
-## test[, prop := value / tot]
-## test[age != "a1", weighted.mean(1 - prop, w = value)]
 hirr <- 25
 args$Hirr <- c(1, hirr, hirr * 0.43)
-## args$ari0 <- 1e-2
-## args$initD[, 2:3] <- 150e-5
 args$beta <- 1.25
 args$cdr <- 0.8
 ## ACF: doing this makes B
