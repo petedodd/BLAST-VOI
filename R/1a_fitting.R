@@ -14,6 +14,7 @@ data(pf_data7)
 mwi_vs_blantyre_PR <-
   mean(BLASTtbmod::blantyre$hivpre) / # 2015
     hivp_mwi[variable == "HIVpc" & Period == 2015, value]
+
 ## how much higher is Blantyre HIV inc than national: use prev data
 mwi_vs_blantyre <- mwi_vs_blantyre_PR
 
@@ -40,7 +41,7 @@ years <- 18 + 1 / 12 #duration of runs
 args00 <- args <- get.parms(
   start_year = start_year, years = years,
   ari0 = 1e-2,
-  Dinit = cbind(rep(0,7), rep(150e-5,7), rep(150e-5,7)),
+  Dinit = cbind(rep(0, 7), rep(150e-5, 7), rep(150e-5, 7)),
   hivfac = mwi_vs_blantyre, # taken from data
   hivdecline = 0, hiv_init_override = 0.21,
   ART_haz = 0.18, ART_init_override = 1e-1,
@@ -52,11 +53,11 @@ args00 <- args <- get.parms(
 ## test[, tot := sum(value), by = age]
 ## test[, prop := value / tot]
 ## test[age != "a1", weighted.mean(1 - prop, w = value)]
-hirr <- 40
+hirr <- 25
 args$Hirr <- c(1, hirr, hirr * 0.43)
 ## args$ari0 <- 1e-2
 ## args$initD[, 2:3] <- 150e-5
-args$beta <- .5
+args$beta <- 1.25
 args$cdr <- 0.8
 ## ACF: doing this makes B
 ## this sets when ACF (measurements) are on
@@ -70,11 +71,13 @@ brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
 out <- run.model(args, args$tt, n.particles = 200)
 ## plot_compare_noterate_agrgt(out, realdata = TRUE)
 ## TBI 21% in adults in 23/24
-get_TBI_prev(out, 162, grp = "adult") #2023.5
+(tbi23 <- get_TBI_prev(out, 162, grp = "adult"))
+fwrite(data.table(tbi23), file = here("output/tbi23.csv"))
 ## TBI over time
 tbiz <- 1:160
 for(i in seq_along(tbiz)) tbiz[i] <- get_TBI_prev(out, i, grp = "adult")[1]
 plot(tbiz, type = "l")
+## plot_HIV_in_TB(out, start_year = start_year) + xlim(c(2015, 2021))
 
 ## check un-calibrated notifications & ACF timing
 gp <- plot_compare_noterate_agrgt(out,
@@ -86,8 +89,9 @@ gp <- gp + geom_vline(
   aes(xintercept = yr),
   linetype = "dashed", col = "grey"
 )
+gp <- gp + labs(subtitle = "Un-calibrated model: notifications & ACF timing")
 
-ggsave(gp, file = here("tmpdata/fit0.png"), w = 12, h = 10)
+ggsave(gp, file = here("output/fit_prefit0.png"), w = 12, h = 10)
 
 
 ## ----------- other checks
@@ -136,9 +140,9 @@ gp <- plot_HIV_dynamic(out,
 gp <- gp +
   geom_point(data = hivpd, pch = 1, size = 2, stroke = 2) +
   xlim(c(2015, 2025)) + ylim(c(0, NA))
-gp
+gp <- gp + theme(axis.text.x = element_text(angle = 55, hjust = 1))
 
-ggsave(gp, filename = here("output/x_hivpatch.png"), w = 7, h = 7)
+ggsave(gp, filename = here("output/x_hivpatch.png"), w = 12, h = 7)
 
 ## HIV in TB
 gp <- plot_HIV_in_TB(out, start_year = start_year) + xlim(c(2015, 2021))
