@@ -47,4 +47,27 @@ Creates PSA `Figure 5`
 
 # Dependencies #
 
-TODO
+The following packages were used:
+
+| Package | Version |
+|---------|---------|
+| bayesplot | 1.15.0 |
+| beepr | 2.0 |
+| BLASTtbmod | 0.0.1 |
+| coda | 0.19-4.1 |
+| data.table | 1.18.2.1 |
+| expm | 1.0-0 |
+| ggplot2 | 4.0.3 |
+| ggpubr | 0.6.3 |
+| ggrepel | 0.9.8 |
+| glue | 1.8.1 |
+| here | 1.0.2 |
+| lubridate | 1.9.5 |
+| mcstate | 0.9.22 |
+| paletteer | 1.7.0 |
+| patchwork | 1.3.2 |
+| scales | 1.4.0 |
+| sf | 1.1-0 |
+
+The package `BLASTtbmod` is available from https://github.com/petedodd/BLASTtbmod
+
