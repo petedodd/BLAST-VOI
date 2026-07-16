@@ -58,6 +58,7 @@ for (i in 1:7) args$ACFhaz0[i, ITL[[i]]] <- args$ACFhaz1[i, ITL[[i]]] <- 0.2
 ## break points in ITL as data for plots
 brks <- sort(c(unlist(lapply(ITL, min)), unlist(lapply(ITL, max))))
 brk_yrs <- data.table(t = brks, yr = start_year + brks / 12)
+args0 <- args
 
 ## run fwd simulation & test (un-calibrated)
 out <- run.model(args, args$tt, n.particles = 200)
@@ -217,28 +218,32 @@ start_yeare <- 2015 - before / 12
 yearse <- 13 + 1 / 6 + before / 12
 
 ## ==== bunched together for easier experimentation
-s <- 10 # 10*2*2
+S <- 5 # 10*2*2
 case_compare7v <- function(state, observed, pars = NULL) {
   ans <- rep(0, dim(state)[2])
-  ## print(dim(state))
   for (i in 1:7) {
-    totnotes <- colSums(state[BLASTtbmod::ln7[[i]], , drop = TRUE] *
-                        state[BLASTtbmod::bn7[[i]], , drop = TRUE])
+    totnotes <- colSums(                           # total per month x 100K
+      state[BLASTtbmod::ln7[[i]], , drop = TRUE] * # monthly per 100K
+        state[BLASTtbmod::bn7[[i]], , drop = TRUE] # total population
+    )
     ## print(str(totnotes))
     totpops <- colSums(state[BLASTtbmod::bn7[[i]], , drop = TRUE])
     ## print(str(totpops))
-    notes_modelled <- totnotes / totpops
+    notes_modelled <- totnotes / 1e5 # totpops
     notes_observed <- observed[[paste0("notifrate_", i)]]
     notes_observed <- rep(notes_observed, dim(state)[2]) # to match particles
     ans <- ans + dnorm(
       x = notes_modelled,
       mean = notes_observed,
-      sd = S, ## (1 / S) * notes_observed,
+      sd = (1 / S) * (notes_observed+1),
+      ## sd = (1 / S) * (notes_observed + 1),
+      ## sd = S,
       log = TRUE
     )
   }
   ans
 }
+
 filter <- create.particlefilter(
   pf_data7e,
   case_compare7v,
@@ -262,24 +267,19 @@ X00 <- args$popinit
 in_argsrealA$popinit <- NULL
 in_argsrealA$pDf <- NULL
 in_argsrealA$pDs <- NULL
+
 ## common inference priors
 make_transform <- function(ARGS) {
   function(theta) {
     ## remake the initial state
     X0 <- X00
     ## === TBD done as simple prevalence
-     tbd <- unname(theta[3])
+    tbd <- unname(theta[3])
     ## ## === tbdi
     ## tbd <- 50e-5
     stat_nos <- apply(X0, c(2, 3, 4), sum) # total in each state
     X0["D", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
     X0["SC", , 2:3, ] <- round(tbd * stat_nos[, 2:3, ])
-    ## ## version by patch
-    ## tbdz <- unname(theta[3:9])## rep(50e-5, 7)
-    ## DZ <- apply(stat_nos, c(2, 3), FUN = function(x) tbdz * x)
-    ## DZ[, 1, ] <- 0 # zero in kids (safety given 2:3 below)
-    ## X0["D", , 2:3, ] <- round(DZ[, 2:3, ])
-    ## X0["SC", , 2:3, ] <- round(DZ[, 2:3, ])
     c(
       ARGS,
       list(
@@ -292,6 +292,7 @@ make_transform <- function(ARGS) {
     )
   }
 }
+
 ## beta
 betamn <- 1.678
 betasg <- 0.371
@@ -299,44 +300,51 @@ initd <- rep(50e-5,7) #1/(1+exp(-lans$par[2:8])) #NOTE
 initp <- qlnorm(0.5, -2.837, 0.32) # 1/(1+exp(-lans$par[1])) #NOTE qlnorm(0.5, -2.837, 0.32)
 ldm <- log(40e-5)
 lds <- 0.05
-sc <- 1.75
+sc <- 1 # 1.75
+proposal_scale <- 1e5
 prior_list <- list(
   beta = mcstate::pmcmc_parameter("beta",
-    initial = .5,
-    min = 1e-6, max = 10,
+    ## initial = results$par[1],
+    initial = qlnorm(0.5, log(0.5), .25),
+    min = 1e-6, max = 15,
     prior = function(x) dlnorm(x, log(0.5), .25, log = TRUE) # log(x)##
+    ## prior = function(x) dlnorm(x, betamn, betasg, log = TRUE) # log(x)##
   ),
   cdr = mcstate::pmcmc_parameter("cdr",
-    initial = .65,
+    ## initial = results$par[2],
+    initial = qbeta(0.5, 80, 20),#.75,
     min = 0.2, max = .9,
     prior = function(x) dbeta(x, 80, 20, log = TRUE)
   ),
   tbd_prev = mcstate::pmcmc_parameter("tbd_prev",
-    initial = 20e-5,
-    min = 1e-5, max = 1e-2,
+    ## initial = results$par[3],
+    initial = qlnorm(0.5, ldm, lds),#20e-5,
+    min = 1e-5, max = 2e-2,
     prior = function(x) dlnorm(x, ldm, lds, log = TRUE)
   ),
   pDf = mcstate::pmcmc_parameter("pDf",
+    ## initial = results$par[4],
     initial = initp,
-    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -2.837, 0.32/sc, log = TRUE)
+    min = 1e-6, max = 0.1,
+    prior = function(x) dlnorm(x, -2.837, 0.32 / sc, log = TRUE)
   ),
   pDs = mcstate::pmcmc_parameter("pDs",
-    initial = qlnorm(0.5, -6.89 - .5, 0.58),
-    min = 1e-6, max = 1, prior = function(x) dlnorm(x, -6.89 - .5, 0.58/sc, log = TRUE)
+    ## initial = results$par[5],
+    initial = qlnorm(0.5, -6.89 - .5 * 0, 0.58),
+    min = 1e-6, max = 1e-2,#,2e-3,
+    prior = function(x) dlnorm(x, -6.89 - .5 * 0, 0.58 / sc, log = TRUE)
   )
 )
-proposal_matrix <- diag(c(
-  2/1e3 , #beta
-  1e-3,  # cdr
-  1e-6, # tbd
-  1e-5, # pDf
-  1e-5 # pDs
-))
-## proposal_matrix <- matrix(2e-3, 1, 1)
+## proposal_matrix <- result$cov
+inits <- rep(1, length(prior_list))
+proposal_matrix <- diag(inits)
+names(inits) <- names(prior_list)
+colnames(proposal_matrix) <- rownames(proposal_matrix) <- names(prior_list)
+for(nm in names(prior_list)) {
+  inits[nm] <- prior_list[[nm]]$initial
+  proposal_matrix[nm, nm] <- inits[nm] / proposal_scale
+}
 
-
-## looking at optimization in a different script
-## optimization.R
 
 ## as list
 mcmc_pars <- mcstate::pmcmc_parameters$new(
@@ -351,10 +359,6 @@ mcmc_pars$prior(mcmc_pars$initial())
 sts <- apply(tsta$popinit, c(1), sum)
 1e2 * sts / sum(sts)
 
-
-## optim for start points?
-## see optimization.R
-
 ## a: run inference
 pmcmc_out <- run.pmcmc(
   particle.filter = filter,
@@ -362,7 +366,7 @@ pmcmc_out <- run.pmcmc(
   n.steps = 250, n.burnin = 100, n.chains = 1,
   ## n.steps = 500, n.burnin = 250, n.chains = 1,
   ## n.steps = 1500, n.burnin = 750, n.chains = 1,
-  n.threads = 10, n.epochs = 4,
+  n.threads = 10, n.epochs = 1,
   n.workers = 1,
   mcmc_pars = mcmc_pars,
   save_restart = in_argsrealA$sim_length, returnall = TRUE
@@ -375,7 +379,7 @@ cat("ESS:\n")
 coda::effectiveSize(mcmc1)
 cat("Rejection rate:\n")
 coda::rejectionRate(mcmc1)
-cat("Average acceptance rate:\n")
+cat("================ Average acceptance rate ====================:\n")
 mean(1 - coda::rejectionRate(mcmc1))
 beepr::beep("coin")
 (smy <- summary(mcmc1))
@@ -385,22 +389,32 @@ plot_compare_noterate_agrgt(
   start_year = start_yeare
 )
 
+pmcmc_out$proposal_matrix
+
+pairs(pmcmc_out$processed_chains$pars)
+
+## bayesplot::mcmc_trace(mcmc1)
 p <- bayesplot::mcmc_trace(mcmc1[, c(2, 4:ncol(mcmc1))])
 p
 
 ## ggsave(p, file = here("tmpdata/mcmc_diagnostics.pdf"), w = 12, h = 10)
 
+## before/after data comparison
+par_before <- inits
+par_after <- smy$statistics[-c(1:3), "Mean"]
+par_after / par_before
 
 
-
-## approach to running counterfactual
+## approach to running continuation & counterfactual continuation
+## NOTE this extends the *background* time-varying parameter arrays
+## layers in (re)initial state from MCMC
 extend_times <- function(p) {
   newparms <- p
-  restart_step <- 60 - before # for 2015 in arg0
-  sim_end <- args00$sim_length # end of args0
+  restart_step <- 60 - before # start of the fitting window, in args00 indexing
+  sim_end <- args00$sim_length # end of args00
   keep <- restart_step:sim_end
   newparms$tt <- args00$tt[keep]
-  newparms$tt <- newparms$tt - newparms$tt[1] # reset time to 0 at restart
+  newparms$tt <- newparms$tt - newparms$tt[1]
   newparms$sim_length <- length(newparms$tt)
   newparms$births_int <- args00$births_int[keep]
   newparms$HIV_int <- args00$HIV_int[keep]
@@ -414,7 +428,7 @@ extend_times <- function(p) {
   newparms
 }
 transform_counterfactual <- function(p) {
-  pars <- pmcmc_out$pmcmc_run$predict$transform(p)
+  pars <- pmcmc_out$processed_chains$predict$transform(p)
   pars <- extend_times(pars)
   ITL <- get_ITL(pars)
   for (i in 1:7) pars$ACFhaz1[i, ITL[[i]]] <- 0.2
@@ -422,46 +436,62 @@ transform_counterfactual <- function(p) {
   pars
 }
 transform_basecase <- function(p) {
-  pars <- pmcmc_out$pmcmc_run$predict$transform(p)
+  pars <- pmcmc_out$processed_chains$predict$transform(p)
   pars <- extend_times(pars)
   ITL <- get_ITL(pars)
   for (i in 1:7) pars$ACFhaz0[i, ITL[[i]]] <- pars$ACFhaz1[i, ITL[[i]]] <- 0.0
   pars
 }
-## loop over parameters for basecase
+## loop over post-burnin posterior samples for basecase
 basecase_pars <- lapply(
-  seq_len(nrow(pmcmc_out$pmcmc_run$pars)),
-  function(i) transform_basecase(pmcmc_out$pmcmc_run$pars[i, ])
+  seq_len(nrow(pmcmc_out$processed_chains$pars)),
+  function(i) transform_basecase(pmcmc_out$processed_chains$pars[i, ])
 )
-## loop over parameters for counterfactual
+## loop over post-burnin posterior samples for counterfactual
 counterfactual_pars <- lapply(
-  seq_len(nrow(pmcmc_out$pmcmc_run$pars)),
-  function(i) transform_counterfactual(pmcmc_out$pmcmc_run$pars[i, ])
+  seq_len(nrow(pmcmc_out$processed_chains$pars)),
+  function(i) transform_counterfactual(pmcmc_out$processed_chains$pars[i, ])
 )
-## basecase model
+
+## Continuing from the actual particle-filtered state that PMCMC ended on
+predict_time <- pmcmc_out$processed_chains$predict$time
+filtered_state <- pmcmc_out$processed_chains$state
+
+## basecase model: continue from the filtered state
 bcmod <- BLASTtbmod:::stocm$new(
   basecase_pars,
-  0, ## initial_time,
+  predict_time,
   n_particles = 1, seed = 1,
   deterministic = TRUE, pars_multi = TRUE
 )
-## counterfactual model
+bcmod$update_state(state = filtered_state)
+## counterfactual model: continue from the same filtered state
 cfmod <- BLASTtbmod:::stocm$new(
   counterfactual_pars,
-  0, ## initial_time,
+  predict_time,
   n_particles = 1, seed = 1,
   deterministic = TRUE, pars_multi = TRUE
 )
+cfmod$update_state(state = filtered_state)
 
-
-
-## simulate models
-output_steps <- basecase_pars[[1]]$tt
-## res will have dimensions (states x particles x samples x time)
+## simulate forward from predict_time to the end of the extended horizon
+## dim(res) = (states x particles x samples x time)
+output_steps <- predict_time:length(basecase_pars[[1]]$tt)
 res0 <- bcmod$simulate(output_steps)
 res1 <- cfmod$simulate(output_steps)
-ress0 <- res0[, 1, , ]
-ress1 <- res1[, 1, , ]
+
+## prepend the PMCMC's own fitted (filtered) trajectory
+combine_traj <- function(traj, cont) {
+  T1 <- dim(traj)[3]
+  T2 <- dim(cont)[3]
+  out <- array(NA_real_, dim = c(dim(traj)[1], dim(traj)[2], T1 + T2 - 1))
+  out[, , 1:T1] <- traj
+  out[, , (T1 + 1):(T1 + T2 - 1)] <- cont[, , 2:T2]
+  out
+}
+traj <- pmcmc_out$processed_chains$trajectories$state
+ress0 <- combine_traj(traj, res0[, 1, , ])
+ress1 <- combine_traj(traj, res1[, 1, , ])
 get_TBI_prev(ress0, 1, grp = "adult")
 
 
@@ -476,8 +506,8 @@ get_TBI_prev(ress0, 1, grp = "adult")
 ## NOTE uses the function from 1b_fit_analysis.R
 
 ## extract data (NOTE memory hungry & time consuming)
-E0 <- formplotdata(ress0, eps = 0.05)
-E1 <- formplotdata(ress1, eps = 0.05)
+E0 <- formplotdata(ress0, eps = 0.05, use_median = FALSE)
+E1 <- formplotdata(ress1, eps = 0.05, use_median = FALSE)
 E0[, acf := "No ACF"]
 E1[, acf := "ACF"]
 EB <- rbind(E0, E1)
@@ -567,4 +597,4 @@ tst <- ggplot(EBR, aes(yr,
 tst
 beepr::beep("coin")
 
-ggsave(tst, file = here("tmpdata/fitng.png"), w = 12, h = 10)
+ggsave(tst, file = here("tmpdata/fitng3.png"), w = 12, h = 10)

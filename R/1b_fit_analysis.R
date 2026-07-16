@@ -11,7 +11,8 @@ load(file = here("tmpdata/ress1.Rdata"))
 
 
 ## function to get out relevant data
-formplotdata <- function(Y, eps = 0.25) {
+formplotdata <- function(Y, eps = 0.25, use_median = TRUE) {
+  mn <- ifelse(use_median, median, mean)
   n_chain_steps <- dim(Y)[2]
   cat("Extracting N...\n")
   D1 <- extract.pops.multi(Y, n_chain_steps, out_type = "N")
@@ -27,16 +28,16 @@ formplotdata <- function(Y, eps = 0.25) {
   D <- merge(D, D3, by = c("chain_step", "t", "patch"))
   D[, cummort := cumsum(TB_deaths), by = .(chain_step, patch)]
   aggD <- D[, .(
-    noterate.mid = 1e5 * median(notes / N),
+    noterate.mid = 1e5 * mn(notes / N),
     noterate.lo = 1e5 * quantile(notes / N, eps),
     noterate.hi = 1e5 * quantile(notes / N, 1 - eps),
-    mortrate.mid = 1e5 * median(TB_deaths / N),
+    mortrate.mid = 1e5 * mn(TB_deaths / N),
     mortrate.lo = 1e5 * quantile(TB_deaths / N, eps),
     mortrate.hi = 1e5 * quantile(TB_deaths / N, 1 - eps),
-    cummort.mid = median(cummort),
+    cummort.mid = mn(cummort),
     cummort.lo = quantile(cummort, eps),
     cummort.hi = quantile(cummort, 1 - eps)## ,
-    ## tottbdeaths.mid = median(sum(TB_deaths)),
+    ## tottbdeaths.mid = mn(sum(TB_deaths)),
     ## tottbdeaths.lo = quantile(sum(TB_deaths), eps),
     ## tottbdeaths.hi = quantile(sum(TB_deaths), 1 - eps)
   ), by = .(t, patch)]
