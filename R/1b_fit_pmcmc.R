@@ -4,7 +4,10 @@
 ##
 ## theta = (beta, cdr, pDf, pDs); fixed zone-specific progression IRR
 ##
-## Output: map_fit.Rdata, pmcmc_posterior.Rdata, pmcmc_trace.png
+## Output:
+## tmpdata/map_fit.Rdata
+## tmpdata/pmcmc_posterior.Rdata
+## output/x_pmcmc_trace.png
 ## ============================================================
 
 library(coda)
@@ -354,7 +357,7 @@ pc <- pmcmc_out$processed_chains
 mcmc1 <- report("PMCMC posterior", pc)
 
 p <- bayesplot::mcmc_trace(mcmc1[, -(1:3)])
-ggsave(p, file = here("output/pmcmc_trace.png"), w = 10, h = 8)
+ggsave(p, file = here("output/x_pmcmc_trace.png"), w = 10, h = 8)
 
 save(
   pmcmc_out, proposal_matrix, Cov_theta, map_theta, F_zone, SD_FRAC, TBI_SD,

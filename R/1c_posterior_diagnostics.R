@@ -2,34 +2,11 @@
 ## Posterior-based fit-quality check + ACF-vs-No-ACF counterfactual
 ## projection, using the fitted PMCMC output from fit_pmcmc.R.
 ##
-## The historical fit-quality/hump/trend check uses the REAL filtered
-## trajectory from the production PMCMC
-## (pmcmc_out$processed_chains$trajectories$state, all retained
-## posterior samples) -- not a fresh re-simulation at a point estimate.
-## The projection continues each posterior sample from its own filtered
-## state at the end of the fit window via a stochastic ensemble, and
-## prepends that same real filtered historical trajectory rather than
-## re-simulating history from scratch. This matters: particle-filter
-## resampling can track data patterns (e.g. a rise-then-fall in
-## notifications) that a single deterministic trajectory at a point
-## estimate may not show as clearly.
 ##
-## Every zone-rate below is 1e5*sum(notes)/sum(N), a genuine per-capita
-## rate -- see fit_pmcmc.R's compare-function comment for why this
-## matters over a multi-year projection horizon.
-##
-## NOTE on closures: pmcmc_out$processed_chains$predict$transform is
-## the transform closure saved inside the PMCMC output. It calls
-## build_pars_flat(), a free variable resolved in whatever R global
-## environment is current when the closure is invoked (it is not
-## serialized with the object, since its enclosing environment is
-## .GlobalEnv). common_setup.R's build_pars_flat(), in_argsrealA_ext,
-## X00 and BASE_IRR_VEC must therefore match fit_pmcmc.R's exactly
-## (they do, since both source the same file) for predict$transform()
-## to work here.
-##
-## Output: fit_diagnostics.Rdata, counterfactual_projection.Rdata,
-## output/counterfactual_projection.png
+## Output:
+## tmpdata/fit_diagnostics.Rdata
+## tmpdata/counterfactual_projection.Rdata
+## output/Figure3.png
 ## ============================================================
 
 years <- 21 # extended horizon for ACF window
