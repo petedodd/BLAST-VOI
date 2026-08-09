@@ -356,9 +356,11 @@ cat("elapsed:", format(Sys.time() - t0), "\n")
 pc <- pmcmc_out$processed_chains
 mcmc1 <- report("PMCMC posterior", pc)
 
+## MCMC traceplot
 p <- bayesplot::mcmc_trace(mcmc1[, -(1:3)])
 ggsave(p, file = here("output/x_pmcmc_trace.png"), w = 10, h = 8)
 
+## MCMC correlation plot
 png(here("output/x_pmcmc_corplot.png"), w = 800, h = 800)
 corplot::corplot( as.matrix(mcmc1[, -(1:3)]), points = TRUE)
 dev.off()

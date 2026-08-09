@@ -5,6 +5,7 @@
 ##
 ## Output:
 ## tmpdata/fit_diagnostics.Rdata
+## tmpdata/simulation_summaries.Rdata
 ## tmpdata/counterfactual_projection.Rdata
 ## output/Figure3.png
 ## ============================================================
@@ -124,6 +125,12 @@ counterfactual_pars <- lapply(
   function(i) transform_counterfactual(pmcmc_out$processed_chains$pars[i, ])
 )
 
+## per-zone TB-deaths column indices, for the Figure 4 VOI-of-targeting
+## calculation below; reuses the (synthetic N-patch) PSA pipeline's helper,
+## which generalizes directly to this real 7-zone model
+source(here("R/utils/PSA_utils.R"))
+deaths_idx <- getIndexList(basecase_pars[[1]])
+
 predict_time <- pmcmc_out$processed_chains$predict$time
 filtered_state <- pmcmc_out$processed_chains$state
 output_steps <- predict_time:length(basecase_pars[[1]]$tt)
@@ -177,16 +184,28 @@ simulate_and_summarize <- function(pars_list, label) {
     (T1 + 1):(T1 + T2 - 1),
     label
   )
+  ## month x zone
+  ## TB_deaths is a per-timestep count not cumulative
+  ## kept for the Figure 4 VOI-of-targeting calculation below
+  deaths <- getMeanDeaths(res[, , 2:T2, drop = FALSE], deaths_idx)
   rm(res, mod)
   gc()
-  out
+  list(notif = out, deaths = deaths)
 }
 summ0 <- simulate_and_summarize(basecase_pars, "No ACF")
 summ1 <- simulate_and_summarize(counterfactual_pars, "ACF")
 
+save(
+  summ0, summ1,
+  file = here("tmpdata/simulation_summaries.Rdata")
+)
+
+cat("Saved to tmpdata/simulation_summaries.Rdata\n")
+
+
 hist_summary_bc <- copy(hist_summary)[, scenario := "No ACF"]
 hist_summary_cf <- copy(hist_summary)[, scenario := "ACF"]
-cf_summary <- rbind(hist_summary_bc, hist_summary_cf, summ0, summ1)
+cf_summary <- rbind(hist_summary_bc, hist_summary_cf, summ0$notif, summ1$notif)
 cf_summary[, yr := start_yeare + (month - 1) / 12]
 
 ITLf <- get_ITL(basecase_pars[[1]])
@@ -267,9 +286,9 @@ p_cf <- ggplot(
   ) +
   guides(fill = guide_legend(nrow = 1), col = guide_legend(nrow = 1)) +
   xlim(2015, NA)
+p_cf
 
-
-ggsave(file = here("output/Figure3.png"), w = 8, h = 7)
+ggsave(p_cf, file = here("output/Figure3.png"), w = 8, h = 7)
 
 
 cat(
@@ -285,26 +304,37 @@ cat("Saved to tmpdata/counterfactual_projection.Rdata\n")
 cat("=== DONE ===\n")
 
 
-## TODO this needs revising to match the new workflow
 ## ============ looking at figure 4 =========
+## VOI-of-targeting figure: benefit of knowing the true, zone-specific
+## effect of ACF vs. having no such information (i.e. random targeting).
+## "true_slopes" = per-capita monthly rate at which ACF averts TB deaths in
+## each zone, taken as the slope (over that zone's own ACF window, from
+## ITLf above) of the "deaths averted" flow: built from the
+## deaths matrices threaded through from the basecase/counterfactual
+## simulations already run above for Figure 3 (summ0$deaths/summ1$deaths),
+## rather than re-simulating.
 source(here("R/utils/benefit.R"))
 load(here("data/pops.Rdata"))
 
-## EB ddf are the slopes
-EB[qty == "ddf" & !is.na(mid)]
+deaths0 <- summ0$deaths # No ACF; month x zone
+deaths1 <- summ1$deaths # ACF
+DD <- deaths0 - deaths1 # monthly TB deaths averted by ACF, month x zone
 
-
-## calculate slopes
-slpd <- EB[qty == "ddf" & !is.na(mid),
-  {
-    list(slp = coef(lm(data = .SD, mid ~ t))[2])
-  },
-  by = patch
-] # slopes
-true_slopes <- slpd$slp / 1e4
+## slope of the deaths-averted flow during each zone's own ACF window,
+## converted to a per-capita rate using this zone's real population
+slpd <- rbindlist(lapply(1:7, function(i) {
+  wnd <- ITLf[[i]] - T1 # map full-timeline month index to deaths0/1 row index
+  wnd <- wnd[wnd >= 1 & wnd <= nrow(DD)]
+  data.table(
+    zone = i,
+    slp = coef(lm(y ~ t, data = data.table(y = DD[wnd, i], t = wnd)))[["t"]]
+  )
+}))
+true_slopes <- slpd$slp / pops
 
 ## tests
-halfcov <- DbenefitFromSlps(true_slopes,
+halfcov <- DbenefitFromSlps(
+  true_slopes,
   pops, # use pops as ranking
   pops, 0.5 * sum(pops),
   verbose = TRUE,
@@ -316,8 +346,8 @@ covz <- seq(from = 5e-2, to = 95e-2, by = 5e-2)
 iterz <- 1:10e3
 B <- list()
 k <- 1
-for (i in 1:length(covz)) {
-  for (j in 1:length(iterz)) {
+for (i in seq_along(covz)) {
+  for (j in seq_along(iterz)) {
     B[[k]] <- DbenefitFromSlps(true_slopes,
       sample(7), ## pops, #use pops as ranking
       pops, covz[i] * sum(pops),
@@ -390,11 +420,17 @@ fig4b <- ggplot(BT, aes(x = CET, y = voi.mid, ymin = voi.lo, ymax = voi.hi)) +
   xlab("Cost-effectiveness threshold (USD)") +
   scale_y_continuous(label = scales::comma) +
   ylab("VOI in USD")
-
 fig4b
 
-fig4 <- ggarrange(fig4a, fig4b, nrow = 1, ncol = 2, labels = LETTERS[1:2])
+fig4 <- ggpubr::ggarrange(
+  fig4a, fig4b,
+  nrow = 1, ncol = 2, labels = LETTERS[1:2]
+)
 fig4
 
-ggsave(fig4, file = here("output/Figure4.png"), w = 10, h = 5)
+ggsave(
+  fig4,
+  file = here("output/Figure4.png"),
+  w = 10, h = 5
+)
 
