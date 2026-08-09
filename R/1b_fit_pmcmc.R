@@ -359,6 +359,10 @@ mcmc1 <- report("PMCMC posterior", pc)
 p <- bayesplot::mcmc_trace(mcmc1[, -(1:3)])
 ggsave(p, file = here("output/x_pmcmc_trace.png"), w = 10, h = 8)
 
+png(here("output/x_pmcmc_corplot.png"), w = 800, h = 800)
+corplot::corplot( as.matrix(mcmc1[, -(1:3)]), points = TRUE)
+dev.off()
+
 save(
   pmcmc_out, proposal_matrix, Cov_theta, map_theta, F_zone, SD_FRAC, TBI_SD,
   file = here("tmpdata/pmcmc_posterior.Rdata")
