@@ -133,7 +133,7 @@ getMeanDD <- function(X, X0, itz, indices) {
 
 ## make a list of indices for TB deaths in each zone
 getIndexList <- function(args) {
-  nz <- length(args$popinit)
+  nz <- args$patch_dims
   cnmz <- getnewcolnames(args)
   idz <- cnmz$index$TB_deaths # column ids of deaths
   zdz <- rep(1:args$patch_dims, 3 * 3) # zones x (HIVxage)
@@ -144,7 +144,7 @@ getIndexList <- function(args) {
 
 
 getIndexListArray <- function(args, var33 = "TB_deaths") {
-  nz <- length(args$popinit)
+  nz <- args$patch_dims
   cnmz <- getnewcolnames(args)
   idz <- cnmz$index[[var33]] # column ids of deaths
   zdz <- rep(1:args$patch_dims, 3 * 3) # zones x (HIVxage)

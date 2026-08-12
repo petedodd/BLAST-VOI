@@ -165,6 +165,7 @@ T1 <- dim(traj)[3]
 cat("Summarizing shared historical trajectory (", T1, "months)...\n")
 hist_summary <- summarize_array(traj, seq_len(T1), "historical")
 
+## NOTE this is slow: skip to load if already generated!
 simulate_and_summarize <- function(pars_list, label) {
   cat("Simulating", label, "forward (n_particles=", N_PROJ_PARTICLES, ")...\n")
   mod <- BLASTtbmod:::stocm$new(
@@ -192,6 +193,7 @@ simulate_and_summarize <- function(pars_list, label) {
   gc()
   list(notif = out, deaths = deaths)
 }
+
 summ0 <- simulate_and_summarize(basecase_pars, "No ACF")
 summ1 <- simulate_and_summarize(counterfactual_pars, "ACF")
 
@@ -202,6 +204,7 @@ save(
 
 cat("Saved to tmpdata/simulation_summaries.Rdata\n")
 
+load(here("tmpdata/simulation_summaries.Rdata"))
 
 hist_summary_bc <- copy(hist_summary)[, scenario := "No ACF"]
 hist_summary_cf <- copy(hist_summary)[, scenario := "ACF"]
@@ -309,19 +312,21 @@ cat("=== DONE ===\n")
 ## effect of ACF vs. having no such information (i.e. random targeting).
 ## "true_slopes" = per-capita monthly rate at which ACF averts TB deaths in
 ## each zone, taken as the slope (over that zone's own ACF window, from
-## ITLf above) of the "deaths averted" flow: built from the
+## ITLf above) of the *cumulative* deaths-averted curve: built from the
 ## deaths matrices threaded through from the basecase/counterfactual
 ## simulations already run above for Figure 3 (summ0$deaths/summ1$deaths),
 ## rather than re-simulating.
 source(here("R/utils/benefit.R"))
 load(here("data/pops.Rdata"))
 
-deaths0 <- summ0$deaths # No ACF; month x zone
+deaths0 <- summ0$deaths # No ACF; month x zone (per-timestep flow)
 deaths1 <- summ1$deaths # ACF
-DD <- deaths0 - deaths1 # monthly TB deaths averted by ACF, month x zone
 
-## slope of the deaths-averted flow during each zone's own ACF window,
-## converted to a per-capita rate using this zone's real population
+## cumulative  deaths averted by ACF, month x zone-state
+DD <- apply(deaths0, 2, cumsum) - apply(deaths1, 2, cumsum)
+
+## slope of the cumulative deaths-averted curve during each zone's own ACF
+## window, converted to a per-capita rate using this zone's real population
 slpd <- rbindlist(lapply(1:7, function(i) {
   wnd <- ITLf[[i]] - T1 # map full-timeline month index to deaths0/1 row index
   wnd <- wnd[wnd >= 1 & wnd <= nrow(DD)]
@@ -348,9 +353,11 @@ B <- list()
 k <- 1
 for (i in seq_along(covz)) {
   for (j in seq_along(iterz)) {
-    B[[k]] <- DbenefitFromSlps(true_slopes,
+    B[[k]] <- DbenefitFromSlps(
+      true_slopes,
       sample(7), ## pops, #use pops as ranking
-      pops, covz[i] * sum(pops),
+      pops,
+      covz[i] * sum(pops),
       verbose = FALSE,
       separate = TRUE
     )
