@@ -35,6 +35,8 @@ load(here("tmpdata/PARGS.Rdata"))
 
 ## baseparms
 args <- get.parms(start_year = 2015, years = 6)
+args$cdr <- 0.8 # calibrated detection ratio (common_fitting_setup.R);
+## package default of 0.5 (get.parms.R) predates calibration
 
 
 ## --- change patch no
@@ -93,13 +95,15 @@ for (k in 1:NK) {
     (1 - alph) * matrix(1 / num_patches, num_patches, num_patches)
   MM <- diag(RRbeta) %*% MM # heterogeneity in beta
 
-  ## progression
-  pf <- aggregator(totN, num_patches, PARGS[[k]]$pf)
+  ## progression: a single scalar draw per k (like bet/alph), not a
+  ## per-patch vector, so no aggregator() call is needed here
+  pf <- PARGS[[k]]$pf
 
   ## run
   args$initD[, 2:3] <- prevz
   args$ari0 <- ari0
-  args$pf <- pf
+  args$pDf <- pf # NOTE: model parameter is "pDf", not "pf" -- previously
+  ## silently ignored by odin since no such user() parameter exists
   args$beta <- bet
   args$MM <- MM
 

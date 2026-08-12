@@ -4,7 +4,6 @@ library(here)
 library(lhs)
 
 ## tmpdata/
-
 (tot <- 7 * 5^2 * 3^2 * 2^3) #smallest integer divisible by all of below
 exx <- c(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
 tot / exx
@@ -12,33 +11,48 @@ tot / exx
 num_patches <- tot #fixed
 
 ## --- top level stuff
-## prevalence
-prev.mean <- 200e-5
+## prevalence: real fit fixes initial disease prevalence at
+## TBD_PREV_FIXED = 4.246e-4 (common_fitting_setup.R / 1b_fit_pmcmc.R)
+prev.mean <- 4.246e-4
 prev.CV <- sqrt(num_patches / 10) # 1 for npatch=10, growing with sqrt npatches
 prev.mu <- log(prev.mean / sqrt(1 + prev.CV^2))
 prev.sg <- sqrt(log(1 + prev.CV^2))
-## curve(dlnorm(x, prev.mu, prev.sg), from = 0, to = 1e-2, n = 1e3)
+## curve(
+##   dlnorm(x, prev.mu, prev.sg),
+##   from = 0, to = 2e-3, n = 1e3
+## )
 
-## initial state
-ari0.mu <- log(0.05)
+## initial state: real fit fixes ari0 at 1e-2 (common_fitting_setup.R)
+ari0.mu <- log(0.01)
 ## sqrt(log(2)) for npatch=10, CV growing with sqrt npatches
 ari0.sg <- sqrt(log(1 + num_patches / 10))
-## curve(dlnorm(x, ari0.mu, ari0.sg), from = 0, to = 0.1, n = 1e3)
+## curve(
+##   dlnorm(x, ari0.mu, ari0.sg),
+##   from = 0, to = 0.1, n = 1e3
+## )
 
-## transmission
-beta.mu <- log(10)
-## sqrt(log(2)) for npatch=10, CV growing with sqrt npatches
-beta.sg <- sqrt(log(1+num_patches/10))
-##curve(dlnorm(x, beta.mu, beta.sg), from = 0, to = 20, n = 1e3)
+## transmission: prior is beta ~ lnorm(log(0.5), 0.25) (1b_fit_pmcmc.R);
+beta.mu <- log(0.5)
+beta.sg <- 0.25
+## curve(
+##   dlnorm(x, beta.mu, beta.sg),
+##   from = 0, to = 2, n = 1e3
+## )
+
+
+## hyper parms for alpha
 alph.a <- 2
 alph.b <- 2
 
-## progression
+## fast progression
 mn <- 0.05860121
 pf.mu <- log(mn / (sqrt(1 + 1.5)))
 ## sqrt(log(1.5)) for npatch=10, CV growing with sqrt npatches
 pf.sg <- sqrt(log(1 + 0.5 * num_patches / 10))
-## curve(dlnorm(x, pf.mu, pf.sg), from = 0, to = 0.1, n = 1e3)
+## curve(
+##   dlnorm(x, pf.mu, pf.sg),
+##   from = 0, to = 0.1, n = 1e3
+## )
 
 ## ================== PSA
 ## --- sample loop
@@ -63,7 +77,7 @@ for (k in 1:NK) {
   PARGS[[k]][["prevz"]] <- prevz
 
   ## initial state
-  ari0.mean <- 0.05
+  ari0.mean <- 0.01
   ari0.CV <- 1
   ari0.mu <- log(ari0.mean / sqrt(1 + ari0.CV^2))
   ari0.sg <- sqrt(log(1 + ari0.CV^2))
@@ -71,8 +85,8 @@ for (k in 1:NK) {
   PARGS[[k]][["ari0"]] <- ari0
 
   ## transmission
-  beta.mu <- log(10)
-  beta.sg <- sqrt(log(2))
+  beta.mu <- log(0.5)
+  beta.sg <- 0.25
   bet <- qlnorm(LH[k, 2], beta.mu, beta.sg)
   RRbeta <- rlnorm(num_patches, meanlog = 0, sdlog = prev.sg)
   alph <- qbeta(LH[k, 3], alph.a, alph.b)
@@ -80,12 +94,12 @@ for (k in 1:NK) {
   PARGS[[k]][["alph"]] <- alph
   PARGS[[k]][["RRbeta"]] <- RRbeta
 
-  ## progression
+  ## fast progression
   mn <- 0.05860121
   pf.mu <- log(mn / (sqrt(1 + 1.5)))
   pf.sg <- sqrt(log(1.5)) # sqrt(log(1.5))
   pf <- qlnorm(LH[k, 4], pf.mu, pf.sg)
-  PARGS[[k]][["pf"]] <- RRbeta
+  PARGS[[k]][["pf"]] <- pf
 } # end k-loop
 
 
