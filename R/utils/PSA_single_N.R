@@ -36,7 +36,6 @@ load(here("tmpdata/PARGS.Rdata"))
 ## baseparms
 args <- get.parms(start_year = 2015, years = 6)
 args$cdr <- 0.8 # calibrated detection ratio (common_fitting_setup.R);
-## package default of 0.5 (get.parms.R) predates calibration
 
 
 ## --- change patch no
@@ -53,7 +52,10 @@ screenrate0 <- 1e4 / args$dt # 10K per months as people per year
 screenrate <- 0.5 * screenrate0 / (num_patches/10)
 
 ## check
-itz <- makeITZ(args$popinit,
+## makeITZ() expects a per-patch population vector; popinit is now a
+## rank-4 (compartment, patch, age, HIV) array, so sum over everything
+## but the patch dimension
+itz <- makeITZ(apply(args$popinit, 2, sum),
   screenrate = screenrate,
   burnin = 12
 ) # each one is >=5 long
@@ -100,10 +102,9 @@ for (k in 1:NK) {
   pf <- PARGS[[k]]$pf
 
   ## run
-  args$initD[, 2:3] <- prevz
+  args <- setPrevalence(args, prevz) # NOTE: previously "args$initD[, 2:3]
   args$ari0 <- ari0
-  args$pDf <- pf # NOTE: model parameter is "pDf", not "pf" -- previously
-  ## silently ignored by odin since no such user() parameter exists
+  args$pDf <- pf # NOTE: model parameter is "pDf", not "pf"
   args$beta <- bet
   args$MM <- MM
 

@@ -20,9 +20,31 @@ updateARGS <- function(args, numpatches = 7, simlength = 73) {
   args$tt <- seq(0, by = 1, length.out = simlength)
 
   ## adjust args depending on number of patches
+  ## popinit must be a rank-4 array (compartment, patch, age, HIV) -- the
+  ## odin model's own initial-disease-split logic (previously driven by a
+  ## live "initD" input) is commented out in stocm.R (see lines ~20-34,
+  ## 492: "now taken as input"); that calculation moved into get.parms(),
+  ## which pre-bakes the full state into popinit before the model ever
+  ## runs. A flat per-patch vector (the old shape here) is no longer valid.
+  age_dims <- 3
+  HIV_dims <- 3
   patchpop <- 500e3 / numpatches
-  args$popinit <- rep(patchpop, numpatches)
-  args$initD <- matrix(0, nrow = numpatches, ncol = 3)
+  cellpop <- patchpop / (age_dims * HIV_dims) # split evenly per patch
+  diseasefrac <- 0.5e-2 # matches the old (now-unused) initD default
+  popinit <- array(0, dim = c(7, numpatches, age_dims, HIV_dims))
+  popinit[1, , 1, ] <- cellpop # age class 1 (children): fully uninfected (U)
+  popinit[1, , 2:3, ] <- cellpop * (1 - diseasefrac) # adults: mostly U
+  popinit[4, , 2:3, ] <- cellpop * diseasefrac # ...with a small D seed
+  ## rbinom() requires integer trial counts -- non-integer compartment
+  ## sizes here caused a real, reproducible bug: sequential competing-risk
+  ## allocation silently truncates/rounds each rbinom(n, p) call's n
+  ## inconsistently, which can drift a compartment (observed: D) negative
+  ## and then crash with "Invalid call to binomial" elsewhere downstream.
+  ## get.parms() already rounds every compartment for the same reason.
+  args$popinit <- round(popinit)
+  args$initD <- matrix(0, nrow = numpatches, ncol = 3) # NOTE: vestigial,
+  ## not read by the current model (see comment above) -- kept only so
+  ## code that still sets/reads args$initD doesn't break outright
   args$initD[, 2:3] <- 0.5e-2
   args$IRR <- rep(1, numpatches)
   args$MM <- diag(rep(1, numpatches)) +
@@ -38,6 +60,28 @@ updateARGS <- function(args, numpatches = 7, simlength = 73) {
   args$m_in_int <- matrix(0, nrow = 3, ncol = simlength) # migration
 
   ## return:
+  args
+}
+
+
+## overwrite the disease (D) vs. uninfected (U) split baked into
+## args$popinit by updateARGS(), using a per-patch prevalence vector
+## instead of updateARGS()'s fixed default -- this is what "args$initD
+## <- prevz" used to do back when initD was a live model input (see
+## updateARGS() above); total population per patch/age cell is preserved,
+## only redistributed between compartments 1 (U) and 4 (D)
+setPrevalence <- function(args, prevz) {
+  popinit <- args$popinit
+  HIV_dims <- dim(popinit)[4]
+  poptot <- apply(popinit, c(2, 3), sum) # patch x age, total pop
+  for (p in seq_along(prevz)) {
+    for (a in 2:3) { # adult age classes only, matching updateARGS()
+      cellpop <- poptot[p, a] / HIV_dims
+      popinit[1, p, a, ] <- cellpop * (1 - prevz[p])
+      popinit[4, p, a, ] <- cellpop * prevz[p]
+    }
+  }
+  args$popinit <- round(popinit) # see updateARGS() -- rbinom() needs integers
   args
 }
 
@@ -70,12 +114,16 @@ makeITZ <- function(pops0, screenrate, burnin = 0) {
 
 ## assign ACF hazard schedule
 setACF <- function(args, screenrate, itz) {
-  for (i in 1:length(args$popinit)) {
+  npatch <- args$patch_dims
+  ## popinit is (compartment, patch, age, HIV) -- total population per
+  ## patch is the sum over the other three dims (see updateARGS())
+  patchpop <- apply(args$popinit, 2, sum)
+  for (i in 1:npatch) {
     args$ACFhaz0[i, ] <- args$ACFhaz1[i, ] <- 0
     if (length(itz[[i]]) > 0) {
       args$ACFhaz0[i, itz[[i]]] <-
         args$ACFhaz1[i, itz[[i]]] <-
-        screenrate / args$popinit[i]
+        screenrate / patchpop[i]
     }
   }
   args
