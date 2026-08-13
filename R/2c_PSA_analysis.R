@@ -6,22 +6,7 @@ library(epiR)
 library(glue)
 
 gh <- function(x) glue(here(x))
-
-## === trying different data for
-## TODO check should this be earlier in workflow
-fn <- here("data/pops.Rdata")
-if (!file.exists(fn)) {
-  ## zones <- sf::read_sf(
-  ##   here("data/blantyre_7zone_update/blantyre_7zone_update.shp")
-  ## )
-  ## zones <- zones[order(zones$zone), ] # order by zone number
-  ## TODO
-  zones <- BLASTtbmod::blantyre # use package data instead
-  pops <- zones$population # populations
-  save(pops, file = fn)
-} else {
-  load(fn)
-}
+pops <- BLASTtbmod::blantyre$population # real per-zone population
 
 
 ## === utils
@@ -59,6 +44,7 @@ P <- rbindlist(PL)
 ## check alignment
 R[, .N, by = .(iter, numpatches)]
 P[, .N, by = .(iter, numpatches)]
+## BUG
 all(R[, .N, by = .(iter, numpatches)] == P[, .N, by = .(iter, numpatches)])
 
 

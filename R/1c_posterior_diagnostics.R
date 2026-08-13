@@ -317,7 +317,10 @@ cat("=== DONE ===\n")
 ## simulations already run above for Figure 3 (summ0$deaths/summ1$deaths),
 ## rather than re-simulating.
 source(here("R/utils/benefit.R"))
-load(here("data/pops.Rdata"))
+pops <- BLASTtbmod::blantyre$population # real per-zone population, as used
+## by get.parms() to build the fitted model's own initial state -- do not
+## use a cached data/pops.Rdata copy, which can silently drift out of sync
+## with the package object (see git history: it did)
 
 deaths0 <- summ0$deaths # No ACF; month x zone (per-timestep flow)
 deaths1 <- summ1$deaths # ACF
