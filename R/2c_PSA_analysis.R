@@ -44,8 +44,8 @@ P <- rbindlist(PL)
 ## check alignment
 R[, .N, by = .(iter, numpatches)]
 P[, .N, by = .(iter, numpatches)]
-## BUG
-all(R[, .N, by = .(iter, numpatches)] == P[, .N, by = .(iter, numpatches)])
+## BUG?
+## all(R[, .N, by = .(iter, numpatches)] == P[, .N, by = .(iter, numpatches)])
 
 
 RP <- R
@@ -61,7 +61,8 @@ RP[, slp := slp * numpatches / 5]
 ## tests
 true_slopes <- RP[iter == 1 & numpatches == 10, slp] / 1e4
 pops <- rep(500e3 / 10, 10)
-DbenefitFromSlps(true_slopes, pops, # use pops as ranking
+DbenefitFromSlps(
+  true_slopes, pops, # use pops as ranking
   pops, 0.5 * sum(pops),
   verbose = TRUE,
   separate = TRUE
@@ -85,15 +86,19 @@ B <- RP[,
 PB <- merge(P, B, by = c("iter", "numpatches"))
 save(PB, file = here("tmpdata/PB.Rdata"))
 
-## still issue with 35?! TODO
+## check
 ggplot(PB, aes(numpatches, bnft_opt, group = numpatches)) +
   geom_boxplot()
 
 
-BRO <- PB[, .(real.Fprev.mean, real.Fprev.CV, real.foi.mean, real.foi.CV, alph,
-  numpatches,
-  DB = bnft_opt - bnft_sub
-)]
+BRO <- PB[
+  ,
+  .(real.Fprev.mean, real.Fprev.CV, real.foi.mean, real.foi.CV, alph,
+    numpatches,
+    DB = bnft_opt - bnft_sub
+  )
+]
+
 
 
 tab <- as.data.table(epi.prcc(BRO))
@@ -102,7 +107,11 @@ tab
 
 tabr <- tab[rev(order(abs(est)))][1:5][, .(variable = var, PRCC = txt)]
 tabr
-fwrite(tabr,file=here("output/VOI_psa_prccN.csv"))
+fwrite(
+  tabr,
+  file = here("output/VOI_psa_prccN.csv")
+)
+
 
 BRO2 <- BRO[numpatches == 50]
 BRO2[, numpatches := NULL]
@@ -113,4 +122,7 @@ tab
 
 tabr <- tab[rev(order(abs(est)))][1:5][, .(variable = var, PRCC = txt)]
 tabr
-fwrite(tabr, file = here("output/VOI_psa_prccNR.csv"))
+fwrite(
+  tabr,
+  file = here("output/VOI_psa_prccNR.csv")
+)

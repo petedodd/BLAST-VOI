@@ -120,7 +120,8 @@ for (k in 1:NK) {
   ## extract other metrics
   PrevEnds <- rowMeans(Y0[indexlistPrev, , dim(Y0)[3]])
   FoiEnds <- rowMeans(Y0[indexlistCFOI, , dim(Y0)[3]]) /
-    (args$popinit * dim(Y0)[3] / 12)
+    (apply(args$popinit, 2, sum) * dim(Y0)[3] / 12) # per-patch total pop,
+  ## not the raw (compartment, patch, age, HIV) array
 
   ## record
   R[[k]] <- DD[intervention == "yes",

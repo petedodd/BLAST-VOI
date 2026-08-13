@@ -14,11 +14,12 @@ load(file = here("tmpdata/PB.Rdata"))
 ## ------------ fig 1a
 
 ## data:
-BRO <- PB[, .(real.Fprev.mean, real.Fprev.CV, real.foi.mean, real.foi.CV, alph,
-  numpatches,
-  DB = bnft_opt - bnft_sub
-)]
-
+BRO <- PB[
+  , .(real.Fprev.mean, real.Fprev.CV, real.foi.mean, real.foi.CV, alph,
+    numpatches,
+    DB = bnft_opt - bnft_sub
+  )
+]
 
 
 tab <- as.data.table(epi.prcc(BRO))
@@ -29,7 +30,8 @@ tabr[, var2 := fcase(
   var == "real.Fprev.mean", "TB prevalence mean",
   var == "real.Fprev.CV", "TB prevalence CV",
   var == "real.foi.CV", "FOI CV",
-  var == "real.foi.mean", "FOI mean"
+  var == "real.foi.mean", "FOI mean",
+  var == "alph", "Transmission assortativity"
 )]
 
 tabr$var2 <- factor(tabr$var2, levels = rev(tabr$var2), ordered = TRUE)
@@ -118,5 +120,5 @@ fig1c
   plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(face = "bold"))
 
-ggsave(here("output/Figure5.png"), w = 10, h = 6)
+ggsave(here("output/Figure5_new.png"), w = 10, h = 6)
 
