@@ -115,8 +115,10 @@ fig1c
 
 
 ## ============ combined figure
-((fig1a / fig1b) | fig1c) +
-  plot_layout(ncol = 2, widths = c(1, 1.5)) +
+wrap_plots(
+  A = fig1a, B = free(fig1b, type = "label"), C = fig1c,
+  design = "AC\nBC", widths = c(1, 1.5)
+) +
   plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(face = "bold"))
 
