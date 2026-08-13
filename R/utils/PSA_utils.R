@@ -98,8 +98,11 @@ setPrevalence <- function(args, prevz) {
 makeITZ <- function(pops0, screenrate, burnin = 0) {
   nzones <- length(pops0) # number of zones
   TZ <- 0.5 * pops0 / screenrate # time in each zone (in years)
-  TZ <- ceiling(12 * TZ) # round up times in months/steps
-  TZ[TZ > 5] <- 10 # cap above at up to 10 months
+  ## round up times in months/steps,
+  TZ <- ceiling(12 * TZ - 1e-3)
+  ## cap window length at 10 months
+  ## but avoid population-rounding noise
+  TZ[TZ > 10] <- 10
   sum(TZ) # ~60 months
   CTZ <- c(0, cumsum(TZ)) # cumulative
   etz <- stz <- CTZ + 2
@@ -118,8 +121,7 @@ makeITZ <- function(pops0, screenrate, burnin = 0) {
 ## assign ACF hazard schedule
 setACF <- function(args, screenrate, itz) {
   npatch <- args$patch_dims
-  ## popinit is (compartment, patch, age, HIV) -- total population per
-  ## patch is the sum over the other three dims (see updateARGS())
+  ## popinit is (compartment, patch, age, HIV)
   patchpop <- apply(args$popinit, 2, sum)
   for (i in 1:npatch) {
     args$ACFhaz0[i, ] <- args$ACFhaz1[i, ] <- 0

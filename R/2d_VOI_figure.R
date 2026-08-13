@@ -7,7 +7,7 @@ library(patchwork)
 
 ## load data
 load(file = here("tmpdata/PB.Rdata"))
-
+source(here("R/utils/benefit.R"))
 
 ## ============ individual figures
 
@@ -120,5 +120,5 @@ fig1c
   plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(face = "bold"))
 
-ggsave(here("output/Figure5_new.png"), w = 10, h = 6)
+ggsave(here("output/Figure5.png"), w = 10, h = 6)
 
