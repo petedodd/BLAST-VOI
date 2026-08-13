@@ -10,6 +10,19 @@
 ## ACFhaz0
 ## ACFhaz1
 
+## more realistic (average, non-zone-specific) age x HIV population structure
+## typical adult HIV prevalence is ~13-21% (BLASTtbmod::blantyre$hivprev)
+## TB progression hazards are multiplied by Hirr = c(1, 25, 10.75)
+## *average* used as a one-off default: from get.parms()'s own real 7-zone
+## popinit (Malawi age pyramid +  Blantyre adult HIV prevalence), by summing
+realisticAgeHIVfrac <- function() {
+  refargs <- get.parms(start_year = 2015, years = 6)
+  ## age x HIV, summed over state & zone
+  f <- apply(refargs$popinit, c(3, 4), sum)
+  f / sum(f)
+}
+
+
 ## function to update args to new default
 updateARGS <- function(args, numpatches = 7, simlength = 73) {
   ## defn things with 7 in:
@@ -20,31 +33,28 @@ updateARGS <- function(args, numpatches = 7, simlength = 73) {
   args$tt <- seq(0, by = 1, length.out = simlength)
 
   ## adjust args depending on number of patches
-  ## popinit must be a rank-4 array (compartment, patch, age, HIV) -- the
-  ## odin model's own initial-disease-split logic (previously driven by a
-  ## live "initD" input) is commented out in stocm.R (see lines ~20-34,
-  ## 492: "now taken as input"); that calculation moved into get.parms(),
-  ## which pre-bakes the full state into popinit before the model ever
-  ## runs. A flat per-patch vector (the old shape here) is no longer valid.
+  ## popinit must be array (compartment, patch, age, HIV)
   age_dims <- 3
   HIV_dims <- 3
   patchpop <- 500e3 / numpatches
-  cellpop <- patchpop / (age_dims * HIV_dims) # split evenly per patch
+  ageHIVfrac <- realisticAgeHIVfrac() # age x HIV, sums to 1 -- see above
   diseasefrac <- 0.5e-2 # matches the old (now-unused) initD default
   popinit <- array(0, dim = c(7, numpatches, age_dims, HIV_dims))
-  popinit[1, , 1, ] <- cellpop # age class 1 (children): fully uninfected (U)
-  popinit[1, , 2:3, ] <- cellpop * (1 - diseasefrac) # adults: mostly U
-  popinit[4, , 2:3, ] <- cellpop * diseasefrac # ...with a small D seed
-  ## rbinom() requires integer trial counts -- non-integer compartment
-  ## sizes here caused a real, reproducible bug: sequential competing-risk
-  ## allocation silently truncates/rounds each rbinom(n, p) call's n
-  ## inconsistently, which can drift a compartment (observed: D) negative
-  ## and then crash with "Invalid call to binomial" elsewhere downstream.
-  ## get.parms() already rounds every compartment for the same reason.
+  for (a in 1:age_dims) {
+    for (h in 1:HIV_dims) {
+      cellpop <- patchpop * ageHIVfrac[a, h]
+      if (a == 1) { # age class 1 (children): fully uninfected (U)
+        popinit[1, , a, h] <- cellpop
+      } else {
+        popinit[1, , a, h] <- cellpop * (1 - diseasefrac) # adults: mostly U
+        popinit[4, , a, h] <- cellpop * diseasefrac # ...with a small D seed
+      }
+    }
+  }
+
+  ## construct ensure integer NOTE some are later overwritten
   args$popinit <- round(popinit)
-  args$initD <- matrix(0, nrow = numpatches, ncol = 3) # NOTE: vestigial,
-  ## not read by the current model (see comment above) -- kept only so
-  ## code that still sets/reads args$initD doesn't break outright
+  args$initD <- matrix(0, nrow = numpatches, ncol = 3)
   args$initD[, 2:3] <- 0.5e-2
   args$IRR <- rep(1, numpatches)
   args$MM <- diag(rep(1, numpatches)) +
@@ -64,28 +74,23 @@ updateARGS <- function(args, numpatches = 7, simlength = 73) {
 }
 
 
-## overwrite the disease (D) vs. uninfected (U) split baked into
-## args$popinit by updateARGS(), using a per-patch prevalence vector
-## instead of updateARGS()'s fixed default -- this is what "args$initD
-## <- prevz" used to do back when initD was a live model input (see
-## updateARGS() above); total population per patch/age cell is preserved,
-## only redistributed between compartments 1 (U) and 4 (D)
+## overwrite the disease (D) vs. uninfected (U) split
+## split *across HIV strata* within each patch/age cell
 setPrevalence <- function(args, prevz) {
   popinit <- args$popinit
-  HIV_dims <- dim(popinit)[4]
   poptot <- apply(popinit, c(2, 3), sum) # patch x age, total pop
   for (p in seq_along(prevz)) {
     for (a in 2:3) { # adult age classes only, matching updateARGS()
-      cellpop <- poptot[p, a] / HIV_dims
+      byhiv <- colSums(popinit[c(1, 4), p, a, ]) # current pop by HIV stratum
+      hivfrac <- byhiv / sum(byhiv) # preserve this cell's realistic HIV split
+      cellpop <- poptot[p, a] * hivfrac
       popinit[1, p, a, ] <- cellpop * (1 - prevz[p])
       popinit[4, p, a, ] <- cellpop * prevz[p]
     }
   }
-  args$popinit <- round(popinit) # see updateARGS() -- rbinom() needs integers
+  args$popinit <- round(popinit) # ensure integers
   args
 }
-
-
 
 
 
@@ -107,8 +112,6 @@ makeITZ <- function(pops0, screenrate, burnin = 0) {
   for (i in 1:nzones) itz[[i]] <- (burnin + stz[i]):(burnin + etz[i])
   itz
 }
-
-
 
 
 
@@ -161,18 +164,22 @@ getMeanDeaths <- function(X, indices) {
 getMeanDD <- function(X, X0, itz, indices) {
   nz <- length(itz)
   ## apply
-  D <- getMeanDeaths(X, indices)
+  D <- getMeanDeaths(X, indices) # month x zone, per-timestep flow
   D0 <- getMeanDeaths(X0, indices)
-  DD <- D0 - D # benefit
+  ## cumulative deaths averted by ACF
+  DD <- apply(D0, 2, cumsum) - apply(D, 2, cumsum) # benefit
   ## differences
   DD <- as.data.table(DD)
   names(DD) <- paste("Zone", 1:nz)
-  DD[, t := 1:nrow(DD)]
+  DD[, t := seq_len(nrow(DD))]
   DD <- melt(DD, id = "t")
   DD[, intervention := "no"]
   for (i in 1:nz) {
     if (length(itz[[i]]) > 0) {
-      DD[variable == paste("Zone", i) & t %in% itz[[i]], intervention := "yes"]
+      DD[
+        variable == paste("Zone", i) & t %in% itz[[i]],
+        intervention := "yes"
+      ]
     }
   }
   DD
