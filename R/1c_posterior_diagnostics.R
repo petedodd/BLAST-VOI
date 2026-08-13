@@ -312,16 +312,9 @@ cat("=== DONE ===\n")
 ## effect of ACF vs. having no such information (i.e. random targeting).
 ## "true_slopes" = per-capita monthly rate at which ACF averts TB deaths in
 ## each zone, taken as the slope (over that zone's own ACF window, from
-## ITLf above) of the *cumulative* deaths-averted curve: built from the
-## deaths matrices threaded through from the basecase/counterfactual
-## simulations already run above for Figure 3 (summ0$deaths/summ1$deaths),
-## rather than re-simulating.
+## ITLf above) of the *cumulative* deaths-averted curve
 source(here("R/utils/benefit.R"))
-pops <- BLASTtbmod::blantyre$population # real per-zone population, as used
-## by get.parms() to build the fitted model's own initial state -- do not
-## use a cached data/pops.Rdata copy, which can silently drift out of sync
-## with the package object (see git history: it did)
-
+pops <- BLASTtbmod::blantyre$population # real per-zone population
 deaths0 <- summ0$deaths # No ACF; month x zone (per-timestep flow)
 deaths1 <- summ1$deaths # ACF
 
