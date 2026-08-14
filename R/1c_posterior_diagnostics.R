@@ -292,6 +292,7 @@ p_cf <- ggplot(
 p_cf
 
 ggsave(p_cf, file = here("output/Figure3.png"), w = 8, h = 7)
+ggsave(p_cf, file = here("output/Figure3.pdf"), w = 8, h = 7)
 
 
 cat(
@@ -434,6 +435,11 @@ fig4
 ggsave(
   fig4,
   file = here("output/Figure4.png"),
+  w = 10, h = 5
+)
+ggsave(
+  fig4,
+  file = here("output/Figure4.pdf"),
   w = 10, h = 5
 )
 

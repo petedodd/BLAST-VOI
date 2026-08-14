@@ -123,4 +123,5 @@ wrap_plots(
   theme(plot.tag = element_text(face = "bold"))
 
 ggsave(here("output/Figure5.png"), w = 10, h = 6)
+ggsave(here("output/Figure5.pdf"), w = 10, h = 6)
 

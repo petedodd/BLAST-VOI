@@ -4,6 +4,8 @@ BLAST VOI analyses
 
 # Analyses
 
+Every `output/Figure{n}.png` is saved alongside a matching `output/Figure{n}.pdf`.
+
 ## 0 = background figures ##
 
 ### "0_Figure1.R" ###
@@ -33,13 +35,14 @@ Outputs: `output/x_hiv_art_dynamics.png`, `output/x_hiv_zone_prevalence.png`, `o
 
 PMCMC fit of the Blantyre TB model to zone-level notification rates
 (2015-2023) plus a single cross-sectional TBI-prevalence point.
-Outputs: `tmpdata/map_fit.Rdata`, `tmpdata/pmcmc_posterior.Rdata`, `output/x_pmcmc_trace.png`
+Outputs: `tmpdata/map_fit.Rdata`, `tmpdata/pmcmc_posterior.Rdata`, `output/x_pmcmc_trace.png`, `output/x_pmcmc_corplot.png`
 
 ### "1c_posterior_diagnostics.R" ###
 
 Posterior-based fit-quality check and ACF-vs-No-ACF counterfactual
-projection, using the fitted PMCMC output from `1b_fit_pmcmc.R`; creates `Figure 3`.
-Outputs: `tmpdata/fit_diagnostics.Rdata`, `tmpdata/simulation_summaries.Rdata`, `tmpdata/counterfactual_projection.Rdata`, `output/Figure3.png`
+projection, using the fitted PMCMC output from `1b_fit_pmcmc.R`; creates
+`Figure 3` and `Figure 4`.
+Outputs: `tmpdata/fit_diagnostics.Rdata`, `tmpdata/simulation_summaries.Rdata`, `tmpdata/counterfactual_projection.Rdata`, `output/Figure3.png`, `output/Figure3.pdf`, `output/Figure4.png`, `output/Figure4.pdf`
 
 ## 2 = PSA of VOI ##
 
@@ -62,7 +65,7 @@ Outputs: `tmpdata/PB.Rdata`, `output/VOI_psa_prccN.csv`, `output/VOI_psa_prccNR.
 ### "2d_VOI_figure.R" ###
 
 Creates PSA `Figure 5`.
-Outputs: `output/Figure5.png`
+Outputs: `output/Figure5.png`, `output/Figure5.pdf`
 
 # Suggested run order #
 
